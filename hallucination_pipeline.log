@@ -1,0 +1,230 @@
+2025-12-19 20:25:12,416 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:25:12,417 - INFO - Running only Step 1
+2025-12-19 20:25:12,417 - INFO - 
+================================================================================
+2025-12-19 20:25:12,417 - INFO - STEP 1: DATA PREPARATION
+2025-12-19 20:25:12,417 - INFO - ================================================================================
+2025-12-19 20:25:12,417 - INFO - Downloading TruthfulQA dataset from HuggingFace...
+2025-12-19 20:25:12,417 - INFO - Dataset will be saved to: data/hallucination/truthfulqa-validation.csv
+2025-12-19 20:25:12,417 - INFO - ================================================================================
+2025-12-19 20:25:12,417 - INFO - STEP: Downloading and constructing TruthfulQA dataset
+2025-12-19 20:25:12,417 - INFO - Command: python -m hallucination.construct_dataset --dataset_name truthfulqa --output_dir data/hallucination
+2025-12-19 20:25:12,417 - INFO - ================================================================================
+2025-12-19 20:25:28,396 - INFO - ✓ Downloading and constructing TruthfulQA dataset completed successfully
+2025-12-19 20:25:28,396 - INFO - Step 1 completed successfully!
+2025-12-19 20:26:07,347 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:26:07,347 - INFO - Running only Step 2
+2025-12-19 20:26:07,347 - INFO - 
+================================================================================
+2025-12-19 20:26:07,347 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:26:07,347 - INFO - ================================================================================
+2025-12-19 20:26:07,347 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:26:07,347 - INFO - Layer: 12
+2025-12-19 20:26:07,347 - INFO - Network density: 1.0
+2025-12-19 20:26:07,347 - INFO - Sparse mode: False
+2025-12-19 20:26:07,347 - INFO - ================================================================================
+2025-12-19 20:26:07,347 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 20:26:07,347 - INFO - Command: python -m hallucination.compute_llm_network --dataset_filename data/hallucination/truthfulqa-validation.csv --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 4 --gpu_id 0
+2025-12-19 20:26:07,347 - INFO - ================================================================================
+2025-12-19 20:26:26,571 - ERROR - ✗ Computing neural topology (hidden-state correlations) failed with error code 1
+2025-12-19 20:26:26,571 - ERROR - Error: Command '['python', '-m', 'hallucination.compute_llm_network', '--dataset_filename', 'data/hallucination/truthfulqa-validation.csv', '--llm_model_name', 'qwen2.5-0.5b', '--ckpt_step', '-1', '--llm_layer', '12', '--batch_size', '16', '--network_density', '1.0', '--num_workers', '4', '--gpu_id', '0']' returned non-zero exit status 1.
+2025-12-19 20:26:26,571 - ERROR - Step 2 failed!
+2025-12-19 20:31:55,892 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:31:55,892 - INFO - Running only Step 2
+2025-12-19 20:31:55,892 - INFO - 
+================================================================================
+2025-12-19 20:31:55,892 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:31:55,892 - INFO - ================================================================================
+2025-12-19 20:31:55,892 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:31:55,892 - INFO - Layer: 12
+2025-12-19 20:31:55,892 - INFO - Network density: 1.0
+2025-12-19 20:31:55,892 - INFO - Sparse mode: False
+2025-12-19 20:31:55,892 - INFO - ================================================================================
+2025-12-19 20:31:55,892 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 20:31:55,892 - INFO - Command: python -m hallucination.compute_llm_network --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 4 --gpu_id 0
+2025-12-19 20:31:55,892 - INFO - ================================================================================
+2025-12-19 20:33:17,459 - INFO - ✓ Computing neural topology (hidden-state correlations) completed successfully
+2025-12-19 20:33:17,460 - INFO - Step 2 completed successfully!
+2025-12-19 20:33:56,481 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:33:56,481 - INFO - Running only Step 3
+2025-12-19 20:33:56,481 - INFO - 
+================================================================================
+2025-12-19 20:33:56,481 - INFO - STEP 3: TRAIN HALLUCINATION DETECTION PROBES
+2025-12-19 20:33:56,481 - INFO - ================================================================================
+2025-12-19 20:33:56,481 - INFO - Probe input type: corr
+2025-12-19 20:33:56,481 - INFO - Number of layers: 1
+2025-12-19 20:33:56,481 - INFO - Hidden channels: 32
+2025-12-19 20:33:56,481 - INFO - Learning rate: 0.001
+2025-12-19 20:33:56,481 - INFO - Dropout: 0.0
+2025-12-19 20:33:56,481 - INFO - Training epochs: 100
+2025-12-19 20:33:56,481 - INFO - ================================================================================
+2025-12-19 20:33:56,481 - INFO - STEP: Training hallucination detection probes
+2025-12-19 20:33:56,481 - INFO - Command: python -m hallucination.train --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --probe_input corr --density 1.0 --batch_size 16 --eval_batch_size 16 --num_layers 1 --hidden_channels 32 --dropout 0.0 --lr 0.001 --num_epochs 100 --early_stop_patience 20 --test_set_ratio 0.2 --gpu_id 0
+2025-12-19 20:33:56,481 - INFO - ================================================================================
+2025-12-19 20:33:59,305 - ERROR - ✗ Training hallucination detection probes failed with error code 1
+2025-12-19 20:33:59,306 - ERROR - Error: Command '['python', '-m', 'hallucination.train', '--dataset_name', 'truthfulqa', '--llm_model_name', 'qwen2.5-0.5b', '--ckpt_step', '-1', '--llm_layer', '12', '--probe_input', 'corr', '--density', '1.0', '--batch_size', '16', '--eval_batch_size', '16', '--num_layers', '1', '--hidden_channels', '32', '--dropout', '0.0', '--lr', '0.001', '--num_epochs', '100', '--early_stop_patience', '20', '--test_set_ratio', '0.2', '--gpu_id', '0']' returned non-zero exit status 1.
+2025-12-19 20:33:59,306 - ERROR - Step 3 failed!
+2025-12-19 20:38:12,309 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:38:12,309 - INFO - Running only Step 2
+2025-12-19 20:38:12,309 - INFO - 
+================================================================================
+2025-12-19 20:38:12,309 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:38:12,309 - INFO - ================================================================================
+2025-12-19 20:38:12,309 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:38:12,309 - INFO - Layer: 12
+2025-12-19 20:38:12,309 - INFO - Network density: 1.0
+2025-12-19 20:38:12,309 - INFO - Sparse mode: False
+2025-12-19 20:38:12,309 - INFO - ================================================================================
+2025-12-19 20:38:12,309 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 20:38:12,309 - INFO - Command: python -m hallucination.compute_llm_network --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 4 --gpu_id 0
+2025-12-19 20:38:12,309 - INFO - ================================================================================
+2025-12-19 20:38:17,184 - INFO - ✓ Computing neural topology (hidden-state correlations) completed successfully
+2025-12-19 20:38:17,184 - INFO - Step 2 completed successfully!
+2025-12-19 20:38:38,897 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:38:38,897 - INFO - Running only Step 3
+2025-12-19 20:38:38,898 - INFO - 
+================================================================================
+2025-12-19 20:38:38,898 - INFO - STEP 3: TRAIN HALLUCINATION DETECTION PROBES
+2025-12-19 20:38:38,898 - INFO - ================================================================================
+2025-12-19 20:38:38,898 - INFO - Probe input type: corr
+2025-12-19 20:38:38,898 - INFO - Number of layers: 1
+2025-12-19 20:38:38,898 - INFO - Hidden channels: 32
+2025-12-19 20:38:38,898 - INFO - Learning rate: 0.001
+2025-12-19 20:38:38,898 - INFO - Dropout: 0.0
+2025-12-19 20:38:38,898 - INFO - Training epochs: 100
+2025-12-19 20:38:38,898 - INFO - ================================================================================
+2025-12-19 20:38:38,898 - INFO - STEP: Training hallucination detection probes
+2025-12-19 20:38:38,898 - INFO - Command: python -m hallucination.train --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --probe_input corr --density 1.0 --batch_size 16 --eval_batch_size 16 --num_layers 1 --hidden_channels 32 --dropout 0.0 --lr 0.001 --num_epochs 100 --early_stop_patience 20 --test_set_ratio 0.2 --gpu_id 0
+2025-12-19 20:38:38,898 - INFO - ================================================================================
+2025-12-19 20:38:40,714 - ERROR - ✗ Training hallucination detection probes failed with error code 1
+2025-12-19 20:38:40,715 - ERROR - Error: Command '['python', '-m', 'hallucination.train', '--dataset_name', 'truthfulqa', '--llm_model_name', 'qwen2.5-0.5b', '--ckpt_step', '-1', '--llm_layer', '12', '--probe_input', 'corr', '--density', '1.0', '--batch_size', '16', '--eval_batch_size', '16', '--num_layers', '1', '--hidden_channels', '32', '--dropout', '0.0', '--lr', '0.001', '--num_epochs', '100', '--early_stop_patience', '20', '--test_set_ratio', '0.2', '--gpu_id', '0']' returned non-zero exit status 1.
+2025-12-19 20:38:40,715 - ERROR - Step 3 failed!
+2025-12-19 20:40:05,697 - WARNING - CUDA not available (detected Darwin). Using CPU mode (gpu_id=-1)
+2025-12-19 20:40:05,697 - WARNING - Reducing num_workers from 4 to 1 on Mac to avoid multiprocessing issues
+2025-12-19 20:40:05,697 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:40:05,697 - INFO - Running in CPU mode
+2025-12-19 20:40:05,697 - INFO - Running only Step 2
+2025-12-19 20:40:05,697 - INFO - 
+================================================================================
+2025-12-19 20:40:05,697 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:40:05,697 - INFO - ================================================================================
+2025-12-19 20:40:05,697 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:40:05,697 - INFO - Layer: 12
+2025-12-19 20:40:42,575 - WARNING - CUDA not available (detected Darwin). Using CPU mode (gpu_id=-1)
+2025-12-19 20:40:42,575 - WARNING - Reducing num_workers from 4 to 1 on Mac to avoid multiprocessing issues
+2025-12-19 20:40:42,575 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:40:42,575 - INFO - Running in CPU mode
+2025-12-19 20:40:42,575 - INFO - Running only Step 2
+2025-12-19 20:40:42,575 - INFO - 
+================================================================================
+2025-12-19 20:40:42,575 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:40:42,575 - INFO - ================================================================================
+2025-12-19 20:40:42,575 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:40:42,575 - INFO - Layer: 12
+2025-12-19 20:40:42,575 - INFO - Network density: 1.0
+2025-12-19 20:40:42,575 - INFO - Sparse mode: False
+2025-12-19 20:40:42,575 - INFO - ================================================================================
+2025-12-19 20:40:42,576 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 20:40:42,576 - INFO - Command: python -m hallucination.compute_llm_network --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 1 --gpu_id -1
+2025-12-19 20:40:42,576 - INFO - ================================================================================
+2025-12-19 20:40:42,817 - ERROR - ✗ Computing neural topology (hidden-state correlations) failed with error code 1
+2025-12-19 20:40:42,818 - ERROR - Error: Command '['python', '-m', 'hallucination.compute_llm_network', '--dataset_name', 'truthfulqa', '--llm_model_name', 'qwen2.5-0.5b', '--ckpt_step', '-1', '--llm_layer', '12', '--batch_size', '16', '--network_density', '1.0', '--num_workers', '1', '--gpu_id', '-1']' returned non-zero exit status 1.
+2025-12-19 20:40:42,818 - ERROR - Step 2 failed!
+2025-12-19 20:42:10,396 - WARNING - CUDA not available (detected Darwin). Using CPU mode (gpu_id=-1)
+2025-12-19 20:42:10,396 - WARNING - Reducing num_workers from 4 to 1 on Mac to avoid multiprocessing issues
+2025-12-19 20:42:10,396 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:42:10,396 - INFO - Running in CPU mode
+2025-12-19 20:42:10,396 - INFO - Running only Step 2
+2025-12-19 20:42:10,396 - INFO - 
+================================================================================
+2025-12-19 20:42:10,396 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 20:42:10,396 - INFO - ================================================================================
+2025-12-19 20:42:10,396 - INFO - Model: qwen2.5-0.5b
+2025-12-19 20:42:10,396 - INFO - Layer: 12
+2025-12-19 20:42:10,397 - INFO - Network density: 1.0
+2025-12-19 20:42:10,397 - INFO - Sparse mode: False
+2025-12-19 20:42:10,397 - INFO - ================================================================================
+2025-12-19 20:42:10,397 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 20:42:10,397 - INFO - Command: /Users/amir/uv_envs/llm_graph/bin/python -m hallucination.compute_llm_network --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 1 --gpu_id -1
+2025-12-19 20:42:10,397 - INFO - ================================================================================
+2025-12-19 20:47:49,253 - INFO - ✓ Computing neural topology (hidden-state correlations) completed successfully
+2025-12-19 20:47:49,258 - INFO - Step 2 completed successfully!
+2025-12-19 20:48:15,767 - WARNING - CUDA not available (detected Darwin). Using CPU mode (gpu_id=-1)
+2025-12-19 20:48:15,767 - WARNING - Reducing num_workers from 4 to 1 on Mac to avoid multiprocessing issues
+2025-12-19 20:48:15,767 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:48:15,767 - INFO - Running in CPU mode
+2025-12-19 20:48:15,767 - INFO - Running only Step 3
+2025-12-19 20:48:15,767 - INFO - 
+================================================================================
+2025-12-19 20:48:15,767 - INFO - STEP 3: TRAIN HALLUCINATION DETECTION PROBES
+2025-12-19 20:48:15,767 - INFO - ================================================================================
+2025-12-19 20:48:15,767 - INFO - Probe input type: corr
+2025-12-19 20:48:15,767 - INFO - Number of layers: 1
+2025-12-19 20:48:15,767 - INFO - Hidden channels: 32
+2025-12-19 20:48:15,767 - INFO - Learning rate: 0.001
+2025-12-19 20:48:15,767 - INFO - Dropout: 0.0
+2025-12-19 20:48:15,767 - INFO - Training epochs: 100
+2025-12-19 20:48:15,767 - INFO - ================================================================================
+2025-12-19 20:48:15,767 - INFO - STEP: Training hallucination detection probes
+2025-12-19 20:48:15,767 - INFO - Command: /Users/amir/uv_envs/llm_graph/bin/python -m hallucination.train --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --probe_input corr --density 1.0 --batch_size 16 --eval_batch_size 16 --num_layers 1 --hidden_channels 32 --dropout 0.0 --lr 0.001 --num_epochs 100 --early_stop_patience 20 --test_set_ratio 0.2 --gpu_id -1
+2025-12-19 20:48:15,767 - INFO - ================================================================================
+2025-12-19 20:48:18,491 - ERROR - ✗ Training hallucination detection probes failed with error code 1
+2025-12-19 20:48:18,491 - ERROR - Error: Command '['/Users/amir/uv_envs/llm_graph/bin/python', '-m', 'hallucination.train', '--dataset_name', 'truthfulqa', '--llm_model_name', 'qwen2.5-0.5b', '--ckpt_step', '-1', '--llm_layer', '12', '--probe_input', 'corr', '--density', '1.0', '--batch_size', '16', '--eval_batch_size', '16', '--num_layers', '1', '--hidden_channels', '32', '--dropout', '0.0', '--lr', '0.001', '--num_epochs', '100', '--early_stop_patience', '20', '--test_set_ratio', '0.2', '--gpu_id', '-1']' returned non-zero exit status 1.
+2025-12-19 20:48:18,491 - ERROR - Step 3 failed!
+2025-12-19 20:49:36,813 - WARNING - CUDA not available (detected Darwin). Using CPU mode (gpu_id=-1)
+2025-12-19 20:49:36,813 - WARNING - Reducing num_workers from 4 to 1 on Mac to avoid multiprocessing issues
+2025-12-19 20:49:36,813 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 20:49:36,813 - INFO - Running in CPU mode
+2025-12-19 20:49:36,813 - INFO - Running only Step 3
+2025-12-19 20:49:36,813 - INFO - 
+================================================================================
+2025-12-19 20:49:36,813 - INFO - STEP 3: TRAIN HALLUCINATION DETECTION PROBES
+2025-12-19 20:49:36,814 - INFO - ================================================================================
+2025-12-19 20:49:36,814 - INFO - Probe input type: corr
+2025-12-19 20:49:36,814 - INFO - Number of layers: 1
+2025-12-19 20:49:36,814 - INFO - Hidden channels: 32
+2025-12-19 20:49:36,814 - INFO - Learning rate: 0.001
+2025-12-19 20:49:36,814 - INFO - Dropout: 0.0
+2025-12-19 20:49:36,814 - INFO - Training epochs: 100
+2025-12-19 20:49:36,814 - INFO - ================================================================================
+2025-12-19 20:49:36,814 - INFO - STEP: Training hallucination detection probes
+2025-12-19 20:49:36,814 - INFO - Command: /Users/amir/uv_envs/llm_graph/bin/python -m hallucination.train --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --probe_input corr --density 1.0 --batch_size 16 --eval_batch_size 16 --num_layers 1 --hidden_channels 32 --dropout 0.0 --lr 0.001 --num_epochs 100 --early_stop_patience 20 --test_set_ratio 0.2 --gpu_id -1
+2025-12-19 20:49:36,814 - INFO - ================================================================================
+2025-12-19 21:16:26,909 - WARNING - CUDA not available, defaulting to Apple MPS (gpu_id=-2)
+2025-12-19 21:16:26,910 - WARNING - Reducing num_workers from 4 to 1 on MPS/CPU to avoid multiprocessing issues
+2025-12-19 21:16:26,910 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 21:16:26,910 - INFO - Running on Apple MPS
+2025-12-19 21:16:26,910 - INFO - Running only Step 2
+2025-12-19 21:16:26,910 - INFO - 
+================================================================================
+2025-12-19 21:16:26,910 - INFO - STEP 2: COMPUTE NEURAL TOPOLOGY
+2025-12-19 21:16:26,910 - INFO - ================================================================================
+2025-12-19 21:16:26,910 - INFO - Model: qwen2.5-0.5b
+2025-12-19 21:16:26,910 - INFO - Layer: 12
+2025-12-19 21:16:26,910 - INFO - Network density: 1.0
+2025-12-19 21:16:26,910 - INFO - Sparse mode: False
+2025-12-19 21:16:26,910 - INFO - ================================================================================
+2025-12-19 21:16:26,910 - INFO - STEP: Computing neural topology (hidden-state correlations)
+2025-12-19 21:16:26,910 - INFO - Command: /Users/amir/uv_envs/llm_graph/bin/python -m hallucination.compute_llm_network --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --batch_size 16 --network_density 1.0 --num_workers 1 --gpu_id -2
+2025-12-19 21:16:26,910 - INFO - ================================================================================
+2025-12-19 21:17:57,164 - INFO - ✓ Computing neural topology (hidden-state correlations) completed successfully
+2025-12-19 21:17:57,180 - INFO - Step 2 completed successfully!
+2025-12-19 21:18:05,078 - WARNING - CUDA not available, defaulting to Apple MPS (gpu_id=-2)
+2025-12-19 21:18:05,078 - WARNING - Reducing num_workers from 4 to 1 on MPS/CPU to avoid multiprocessing issues
+2025-12-19 21:18:05,078 - INFO - Initialized pipeline for model: qwen2.5-0.5b, layer: 12
+2025-12-19 21:18:05,078 - INFO - Running on Apple MPS
+2025-12-19 21:18:05,078 - INFO - Running only Step 3
+2025-12-19 21:18:05,078 - INFO - 
+================================================================================
+2025-12-19 21:18:05,078 - INFO - STEP 3: TRAIN HALLUCINATION DETECTION PROBES
+2025-12-19 21:18:05,078 - INFO - ================================================================================
+2025-12-19 21:18:05,078 - INFO - Probe input type: corr
+2025-12-19 21:18:05,078 - INFO - Number of layers: 1
+2025-12-19 21:18:05,078 - INFO - Hidden channels: 32
+2025-12-19 21:18:05,078 - INFO - Learning rate: 0.001
+2025-12-19 21:18:05,078 - INFO - Dropout: 0.0
+2025-12-19 21:18:05,078 - INFO - Training epochs: 100
+2025-12-19 21:18:05,078 - INFO - ================================================================================
+2025-12-19 21:18:05,078 - INFO - STEP: Training hallucination detection probes
+2025-12-19 21:18:05,078 - INFO - Command: /Users/amir/uv_envs/llm_graph/bin/python -m hallucination.train --dataset_name truthfulqa --llm_model_name qwen2.5-0.5b --ckpt_step -1 --llm_layer 12 --probe_input corr --density 1.0 --batch_size 16 --eval_batch_size 16 --num_layers 1 --hidden_channels 32 --dropout 0.0 --lr 0.001 --num_epochs 100 --early_stop_patience 20 --test_set_ratio 0.2 --gpu_id -2
+2025-12-19 21:18:05,078 - INFO - ================================================================================

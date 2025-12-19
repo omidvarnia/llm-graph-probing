@@ -46,7 +46,13 @@ class ConstantBaseline(torch.nn.Module):
 
 
 def main(_):
-    device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    # Handle device selection (CUDA → MPS → CPU)
+    if FLAGS.gpu_id == -2:
+        device = torch.device("mps")
+    elif FLAGS.gpu_id == -1:
+        device = torch.device("cpu")
+    else:
+        device = torch.device(f"cuda:{FLAGS.gpu_id}")
 
     if FLAGS.use_constant_baseline:
         assert FLAGS.num_layers == 0, "Constant baseline requires num_layers=0."

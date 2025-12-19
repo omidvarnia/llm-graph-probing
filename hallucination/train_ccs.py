@@ -115,7 +115,13 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
  
 
 def main(_):
-    device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    # Handle device selection (CUDA → MPS → CPU)
+    if FLAGS.gpu_id == -2:
+        device = torch.device("mps")
+    elif FLAGS.gpu_id == -1:
+        device = torch.device("cpu")
+    else:
+        device = torch.device(f"cuda:{FLAGS.gpu_id}")
     assert FLAGS.num_layers <= 0, "CCS probing only supports MLP classifier."
 
     if FLAGS.ckpt_step == -1:

@@ -34,7 +34,10 @@ def load_tokenizer_and_model(model_name, ckpt_step, gpu_id):
         padding_side = "right"
     else:
         padding_side = "left"
-    if gpu_id == -1:
+    # Device selection: CUDA → MPS → CPU
+    if gpu_id == -2:
+        device_map = "mps"
+    elif gpu_id == -1:
         device_map = "cpu"
     else:
         device_map = f"cuda:{gpu_id}"
