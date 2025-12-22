@@ -1,7 +1,7 @@
 from absl import app, flags, logging
 import os
 from tqdm import tqdm
-
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -36,6 +36,7 @@ flags.DEFINE_boolean("resume", False, "Whether to resume training from the best 
 flags.DEFINE_integer("seed", 42, "The random seed.")
 FLAGS = flags.FLAGS
 
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
     accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
@@ -44,11 +45,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
 
-    model_save_path = os.path.join(
-        f"saves/{save_model_name}/layer_{FLAGS.llm_layer}",
-        f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
-    )
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+    os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_metrics = {
         "accuracy": 0.0,
@@ -128,21 +126,33 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
  
 
 def main(_):
-    # Handle device selection (CUDA → MPS → CPU)
-    if FLAGS.gpu_id == -2:
-        device = torch.device("mps")
-    elif FLAGS.gpu_id == -1:
-        device = torch.device("cpu")
-    else:
-        device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    logging.info("="*60)
+    logging.info("Training Hallucination Detection Probes")
+    logging.info("="*60)
+    
+    device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    logging.info(f"Using device: {device}")
 
     if FLAGS.ckpt_step == -1:
         model_dir = FLAGS.llm_model_name
     else:
         model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
     save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
+    
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
+    logging.info(f"Model: {FLAGS.llm_model_name}")
+    logging.info(f"Layer: {FLAGS.llm_layer}")
+    logging.info(f"Probe input: {FLAGS.probe_input}")
+    logging.info(f"Network density: {FLAGS.density}")
+    logging.info(f"From sparse data: {FLAGS.from_sparse_data}")
+    logging.info(f"Architecture: {FLAGS.num_layers} layers, {FLAGS.hidden_channels} channels")
+    logging.info(f"Training: {FLAGS.num_epochs} epochs, lr={FLAGS.lr}, batch_size={FLAGS.batch_size}")
+    logging.info(f"Early stopping patience: {FLAGS.early_stop_patience}")
+    logging.info(f"Seed: {FLAGS.seed}")
 
+    logging.info("\nLoading data...")
     if FLAGS.num_layers > 0:
+        logging.info("Using graph-based (GCN) probe")
         train_loader, test_loader = get_truthfulqa_dataloader(
             FLAGS.dataset_name,
             FLAGS.llm_model_name,
@@ -158,14 +168,17 @@ def main(_):
             FLAGS.in_memory,
             FLAGS.seed,
         )
+        num_nodes = get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer)
+        logging.info(f"Number of nodes: {num_nodes}")
         model = GCNClassifier(
-            num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer),
+            num_nodes=num_nodes,
             hidden_channels=FLAGS.hidden_channels,
             num_layers=FLAGS.num_layers,
             dropout=FLAGS.dropout,
             num_output=2,
         ).to(device)
     else:
+        logging.info("Using linear (MLP) probe")
         train_loader, test_loader = get_truthfulqa_linear_dataloader(
             FLAGS.probe_input,
             FLAGS.dataset_name,
@@ -180,16 +193,21 @@ def main(_):
             seed=FLAGS.seed,
             feature_density=FLAGS.density,
         )
+        num_nodes = get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input)
+        logging.info(f"Number of features: {num_nodes}")
         model = MLPClassifier(
-            num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input),
+            num_nodes=num_nodes,
             hidden_channels=FLAGS.hidden_channels,
             num_layers=-FLAGS.num_layers,
             num_output=2,
         ).to(device)
+    
+    logging.info(f"Train samples: {len(train_loader.dataset)}")
+    logging.info(f"Test samples: {len(test_loader.dataset)}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, min_lr=1e-6)
-    writer = SummaryWriter(log_dir=f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
+    writer = SummaryWriter(log_dir=main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
     writer.add_hparams(
         {
             "hidden_channels": FLAGS.hidden_channels,
@@ -200,13 +218,16 @@ def main(_):
     )
 
     if FLAGS.resume:
-        model_save_path = os.path.join(
-            f"saves/{save_model_name}/layer_{FLAGS.llm_layer}",
-            f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
-        )
+        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+        logging.info(f"Resuming from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
+    logging.info("\nStarting training...")
     train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)
+    
+    logging.info("\n" + "="*60)
+    logging.info("✓ Training completed successfully")
+    logging.info("="*60)
 
 
 if __name__ == "__main__":

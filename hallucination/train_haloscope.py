@@ -34,13 +34,7 @@ def get_measures(_pos, _neg):
 
 
 def svd_embed_score(feature, label, begin_k, k_span, mean=1, svd=1, weight=0):
-    # Handle device selection (CUDA → MPS → CPU)
-    if FLAGS.gpu_id == -2:
-        device = torch.device("mps")
-    elif FLAGS.gpu_id == -1:
-        device = torch.device("cpu")
-    else:
-        device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    device = torch.device(f"cuda:{FLAGS.gpu_id}")
     embed_generated = feature
     best_k = -1
     best_auroc_over_k = 0

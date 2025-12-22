@@ -1,7 +1,7 @@
 from absl import app, flags, logging
 import os
 from tqdm import tqdm
-
+from pathlib import Path
 import torch
 torch.set_default_dtype(torch.float32)
 from torch.utils.tensorboard import SummaryWriter
@@ -12,7 +12,9 @@ from graph_matching.model import GraphMatchingModel
 from graph_matching.utils import test_fn
 from utils.model_utils import get_num_nodes
 
-flags.DEFINE_string("dataset_filename", "data/graph_matching/openwebtext-10k.csv", "The dataset filename.")
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
+flags.DEFINE_string("dataset_filename", str(main_dir / "data" / "graph_matching" / "openwebtext-10k.csv"), "The dataset filename.")
 flags.DEFINE_float("network_density", 1.0, "The density of the network.")
 flags.DEFINE_string("llm_model_name_1", "gpt2", "The name of the first LLM model.")
 flags.DEFINE_string("llm_model_name_2", "gpt2", "The name of the second LLM model.")
@@ -49,11 +51,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     writer.add_image("sim_matrix/test", test_sim_matrix, 0, dataformats="HW")
     writer.add_histogram("sim_matrix_histogram/test", test_sim_matrix, 0)
 
-    model_save_path = os.path.join(
-        f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}", 
-        f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
-    )
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
+    os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_test_gauc = test_gauc
     best_test_auc = test_auc
@@ -156,7 +155,7 @@ def main(_):
     else:
         save_model_name_2 = f"{FLAGS.llm_model_name_2}_step{FLAGS.ckpt_step_2}"
     save_model_name = f"{save_model_name_1}_{save_model_name_2}"
-    writer = SummaryWriter(log_dir=f"runs/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}")
+    writer = SummaryWriter(log_dir=main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}")
     writer.add_hparams(
         {
             "hidden_channels": FLAGS.num_channels, "out_channels": FLAGS.num_channels,

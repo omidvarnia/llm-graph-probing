@@ -1,7 +1,7 @@
 from absl import app, flags, logging
 import os
 from tqdm import tqdm
-
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
@@ -10,6 +10,8 @@ from hallucination.dataset import get_truthfulqa_ccs_dataloader
 from hallucination.utils import test_fn_ccs
 from utils.probing_model import MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halueval", "medhallu", "helm"], "Name of the dataset.")
 flags.DEFINE_float("density", 1.0, "The density of the network/features.")
@@ -42,11 +44,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
 
-    model_save_path = os.path.join(
-        f"saves/{save_model_name}/layer_{FLAGS.llm_layer}",
-        f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
-    )
-    os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
+    os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_metrics = {
         "accuracy": 0.0,
@@ -115,20 +114,14 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
  
 
 def main(_):
-    # Handle device selection (CUDA → MPS → CPU)
-    if FLAGS.gpu_id == -2:
-        device = torch.device("mps")
-    elif FLAGS.gpu_id == -1:
-        device = torch.device("cpu")
-    else:
-        device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    device = torch.device(f"cuda:{FLAGS.gpu_id}")
     assert FLAGS.num_layers <= 0, "CCS probing only supports MLP classifier."
 
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = main_dir / FLAGS.llm_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
-    save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
+        model_dir = main_dir / f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+    save_model_name = main_dir / f"hallucination/{FLAGS.dataset_name}/{model_dir}"
 
     train_loader, test_loader = get_truthfulqa_ccs_dataloader(
         FLAGS.dataset_name,
@@ -152,7 +145,7 @@ def main(_):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, min_lr=1e-6)
-    writer = SummaryWriter(log_dir=f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
+    writer = SummaryWriter(log_dir=main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
     writer.add_hparams(
         {
             "hidden_channels": FLAGS.hidden_channels,
@@ -163,10 +156,7 @@ def main(_):
     )
 
     if FLAGS.resume:
-        model_save_path = os.path.join(
-            f"saves/{save_model_name}/layer_{FLAGS.llm_layer}",
-            f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
-        )
+        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)

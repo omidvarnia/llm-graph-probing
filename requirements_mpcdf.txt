@@ -1,0 +1,35 @@
+absl-py==2.1.0
+accelerate==1.6.0
+datasets==3.4.1
+evaluate==0.4.3
+gensim==4.4.0
+numpy==1.26.4
+pillow==11.2.1
+scikit-learn==1.5.1
+scipy==1.16.2
+setproctitle==1.3.5
+tensorboard==2.19.0
+# PyTorch with ROCm support (AMD GPUs)
+# Install from PyTorch ROCm wheel repository
+# Note: Use version without '+rocm' suffix, as uv/pip will find the right wheel from index-url
+
+# For AMD GPUs with ROCm (MPCDF server with ROCm 7.0):
+--index-url https://download.pytorch.org/whl/rocm6.1
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+
+# For NVIDIA GPUs with CUDA 12.1 (comment out ROCm lines above and uncomment below):
+# --index-url https://download.pytorch.org/whl/cu121
+# torch==2.5.1
+# torchvision==0.20.1
+# torchaudio==2.5.1
+
+# For CPU-only (comment out GPU lines above and uncomment below):
+# torch==2.5.1
+# torchvision==0.20.1
+# torchaudio==2.5.1
+
+torch-geometric==2.6.1
+tqdm==4.66.4
+transformers==4.50.2

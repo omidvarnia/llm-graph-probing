@@ -8,13 +8,17 @@ from tqdm import tqdm
 from datasets import load_dataset
 import pandas as pd
 
+from pathlib import Path
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
 flags.DEFINE_enum(
     "dataset_name",
     "truthfulqa",
     ["truthfulqa", "halueval", "medhallu", "helm"],
     "Which dataset to construct."
 )
-flags.DEFINE_string("output_dir", "data/hallucination", "Directory to save the constructed dataset.")
+flags.DEFINE_string("output_dir", str(main_dir / "data/hallucination"), "Directory to save the constructed dataset.")
 FLAGS = flags.FLAGS
 
 

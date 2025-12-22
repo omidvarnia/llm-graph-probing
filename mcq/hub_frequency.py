@@ -2,8 +2,10 @@ from absl import app, flags
 import os
 import pickle
 from tqdm import tqdm
-
+from pathlib import Path
 import numpy as np
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b-instruct", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
@@ -150,11 +152,11 @@ def sparsify_correlation_matrix(corr_matrix, threshold):
 def save_results(model_name, ckpt_step, layer, threshold, count, hub_nodes, hub_degrees, hub_frequency, hub_frequency_prop, valid_graphs):
     # Determine save directory
     if ckpt_step == -1:
-        save_model_name = model_name
+        save_model_name = main_dir / model_name
     else:
-        save_model_name = f"{model_name}_step{ckpt_step}"
+        save_model_name = main_dir / f"{model_name}_step{ckpt_step}"
     
-    output_dir = f"saves/mcq/{save_model_name}/layer_{layer}/community_analysis"
+    output_dir = main_dir / f"saves/mcq/{save_model_name}/layer_{layer}/community_analysis"
     os.makedirs(output_dir, exist_ok=True)
     
     # Save comprehensive results
@@ -214,9 +216,9 @@ def main(_):
     # Determine data directory
     model_name = FLAGS.llm_model_name
     if FLAGS.ckpt_step == -1:
-        data_dir = f"data/{FLAGS.dataset}/{model_name}"
+        data_dir = main_dir / f"data/{FLAGS.dataset}/{model_name}"
     else:
-        data_dir = f"data/{FLAGS.dataset}/{model_name}_step{FLAGS.ckpt_step}"
+        data_dir = main_dir / f"data/{FLAGS.dataset}/{model_name}_step{FLAGS.ckpt_step}"
     
     if not os.path.exists(data_dir):
         print(f"Data directory {data_dir} not found. Exiting.")
@@ -233,13 +235,13 @@ def main(_):
     
     # Save average correlation matrix
     if FLAGS.ckpt_step == -1:
-        save_model_name = f"{FLAGS.dataset}/{FLAGS.llm_model_name}"
+        save_model_name = main_dir / f"{FLAGS.dataset}/{FLAGS.llm_model_name}"
     else:
-        save_model_name = f"{FLAGS.dataset}/{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        save_model_name = main_dir / f"{FLAGS.dataset}/{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
     
-    output_dir = os.path.join(f"saves/{save_model_name}/layer_{FLAGS.llm_layer}/community_analysis")
+    output_dir = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}/community_analysis"
     os.makedirs(output_dir, exist_ok=True)
-    avg_corr_file = os.path.join(output_dir, f"avg_correlation.npy")
+    avg_corr_file = output_dir / f"avg_correlation.npy"
     np.save(avg_corr_file, avg_corr_matrix)
     print(f"Average correlation matrix saved to {avg_corr_file}")
     

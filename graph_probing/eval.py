@@ -1,5 +1,23 @@
 from absl import app, flags
 import os
+import sys
+from pathlib import Path
+import logging
+
+# Configure logging (suppress timestamps/levels as run_logged already adds them)
+logging.basicConfig(level=logging.INFO, format='[EVAL] %(message)s')
+
+# Get main directory from environment or use current directory
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
+# Add project root to path to ensure utils package can be found
+project_root = Path(__file__).parent.parent
+# Ensure project root is first in path, even before current directory
+project_root_str = str(project_root)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
+
 from setproctitle import setproctitle
 
 import numpy as np
@@ -36,37 +54,50 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
+    logging.info("="*60)
+    logging.info("STEP 4: Probe Evaluation Pipeline")
+    logging.info("="*60)
+    logging.info(f"Dataset: {FLAGS.dataset}")
+    logging.info(f"Model: {FLAGS.llm_model_name} (checkpoint: {FLAGS.ckpt_step})")
+    logging.info(f"Layer: {FLAGS.llm_layer}")
+    logging.info(f"Probe input: {FLAGS.probe_input}")
+    logging.info(f"Network density: {FLAGS.density}")
+    logging.info(f"Batch size: {FLAGS.batch_size}")
+    logging.info(f"GPU ID: {FLAGS.gpu_id}")
 
     if FLAGS.gpu_id == -1:
         device = torch.device("cpu")
     else:
         device = torch.device(f"cuda:{FLAGS.gpu_id}")
 
+    logging.info(f"\n[1/4] Loading dataset...")
     hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
     if FLAGS.dataset == "art":
-        dataset_filename = "st_data/art.csv"
+        dataset_filename = str(main_dir / "st_data/art.csv")
         target = "decade"
         num_output = 1
         normalize_targets = True
     elif FLAGS.dataset == "world_place":
-        dataset_filename = "st_data/world_place.csv"
+        dataset_filename = str(main_dir / "st_data/world_place.csv")
         target = ["lat", "lon"]
         num_output = 2
         normalize_targets = True
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+            dataset_filename = str(main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv")
         else:
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+            dataset_filename = str(main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv")
         target = "perplexities"
         num_output = 1
         normalize_targets = True
+    logging.info(f"✓ Dataset loaded from: {dataset_filename}")
 
     if FLAGS.num_layers > 0:
+        logging.info(f"\n[2/4] Loading GCN model with {FLAGS.num_layers} layers...")
         _, test_data_loader = get_brain_network_dataloader(
             dataset_filename,
-            density=FLAGS.density,
+            network_density=FLAGS.density,
             from_sparse_data=FLAGS.from_sparse_data,
             llm_model_name=FLAGS.llm_model_name,
             ckpt_step=FLAGS.ckpt_step,
@@ -91,7 +122,9 @@ def main(_):
             dropout=FLAGS.dropout,
             num_output=num_output,
         ).to(device)
+        model_type = "GCN"
     else:
+        logging.info(f"\n[2/4] Loading MLP model (linear)...")
         _, test_data_loader = get_brain_network_linear_dataloader(
             dataset_filename,
             FLAGS.probe_input,
@@ -115,23 +148,29 @@ def main(_):
             num_layers=-FLAGS.num_layers,
             num_output=num_output,
         ).to(device)
+        model_type = "MLP"
 
+    logging.info(f"✓ Model created ({model_type})")
+    logging.info(f"\n[3/4] Loading trained weights...")
     if FLAGS.ckpt_step == -1:
         save_model_name = f"{FLAGS.llm_model_name}/{FLAGS.dataset}"
     else:
         save_model_name = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
-    model_save_path = os.path.join(
-        f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}",
-        f"best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
-    )
-    model.load_state_dict(torch.load(model_save_path, map_location=device, weights_only=True))
+    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+    model.load_state_dict(torch.load(str(model_save_path), map_location=device, weights_only=True))
+    logging.info(f"✓ Weights loaded from: {model_save_path}")
 
+    logging.info(f"\n[4/4] Running evaluation on test set...")
     if FLAGS.dataset == "world_place":
         all_y, all_pred = eval_model_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
     else:
         all_y, all_pred = eval_model(model, test_data_loader, device, num_layers=FLAGS.num_layers)
     results = np.vstack((all_y.T, all_pred.T)) if FLAGS.dataset == "world_place" else np.vstack((all_y, all_pred))
-    np.save(f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy", results)
+    logging.info(f"✓ Evaluation completed")
+    logging.info("="*60)
+    logging.info("✓ STEP 4 Complete: Probe Evaluation Finished")
+    logging.info("="*60)
+    np.save(str(main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy"), results)
 
 
 if __name__ == "__main__":

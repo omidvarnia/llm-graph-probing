@@ -1,5 +1,23 @@
-from absl import app, flags, logging
+from absl import app, flags
 import os
+import sys
+from pathlib import Path
+import logging
+
+# Configure logging (suppress timestamps/levels as run_logged already adds them)
+logging.basicConfig(level=logging.INFO, format='[TRAIN] %(message)s')
+
+# Get main directory from environment or use current directory
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
+# Add project root to path to ensure utils package can be found
+project_root = Path(__file__).parent.parent
+# Ensure project root is first in path, even before current directory
+project_root_str = str(project_root)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
+
 from tqdm import tqdm
 
 import torch
@@ -42,10 +60,16 @@ FLAGS = flags.FLAGS
 
 
 def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
-    model_save_path = os.path.join(
-        f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}",
-        f"best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
-    )
+    logging.info("="*60)
+    logging.info("STEP 3: Probe Training Pipeline")
+    logging.info("="*60)
+    logging.info(f"Model name: {save_model_name}")
+    logging.info(f"Layer: {FLAGS.llm_layer}")
+    logging.info(f"Learning rate: {FLAGS.lr}")
+    logging.info(f"Number of epochs: {FLAGS.num_epochs}")
+    logging.info(f"Batch size: {FLAGS.batch_size}")
+    
+    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
 
     best_metrics = {
@@ -55,6 +79,7 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         "pearsonr": float("-inf"),
         "spearmanr": float("-inf"),
     }
+    logging.info("\n[1/3] Computing initial test metrics...")
     if FLAGS.dataset == "world_place":
         mse, mae, r2, _, _ = test_fn_space(model, test_data_loader, device, num_layers=FLAGS.num_layers)
         torch.cuda.empty_cache()
@@ -163,21 +188,21 @@ def main(_):
 
     hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
     if FLAGS.dataset == "art":
-        dataset_filename = "st_data/art.csv"
+        dataset_filename = str(main_dir / "st_data/art.csv")
         target = "decade"
         num_output = 1
         normalize_targets = True
     elif FLAGS.dataset == "world_place":
-        dataset_filename = "st_data/world_place.csv"
+        dataset_filename = str(main_dir / "st_data/world_place.csv")
         target = ["latitude", "longitude"]
         num_output = 2
         normalize_targets = True
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+            dataset_filename = str(main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv")
         else:
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+            dataset_filename = str(main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv")
         target = "perplexities"
         num_output = 1
         normalize_targets = True
@@ -203,7 +228,7 @@ def main(_):
             normalize_targets=normalize_targets,
         )
         model = GCNRegressor(
-            num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer),
+            num_nodes=get_num_nodes(FLAGS.llm_model_name, FLAGS.llm_layer, FLAGS.probe_input),
             hidden_channels=FLAGS.num_channels,
             num_layers=FLAGS.num_layers,
             nonlinear_activation=FLAGS.nonlinear_activation,
@@ -238,7 +263,7 @@ def main(_):
 
     optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, min_lr=1e-10)
-    writer = SummaryWriter(log_dir=f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
+    writer = SummaryWriter(log_dir=str(main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer}"))
     writer.add_hparams(
         {
             "nonlinear_activation": FLAGS.nonlinear_activation,
@@ -251,7 +276,7 @@ def main(_):
 
     if FLAGS.resume:
         model_save_path = os.path.join(
-            f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}",
+            main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}",
             f"best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
         )
         model.load_state_dict(torch.load(model_save_path, map_location=device, weights_only=True))

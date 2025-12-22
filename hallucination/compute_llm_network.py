@@ -1,9 +1,9 @@
-from absl import app, flags
+from absl import app, flags, logging
 from multiprocessing import Process, Queue
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from tqdm import tqdm
-
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -13,6 +13,8 @@ from gensim.utils import tokenize
 from hallucination.utils import format_prompt
 from utils.constants import hf_model_name_map
 from utils.model_utils import load_tokenizer_and_model
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_enum(
     "dataset_name",
@@ -187,8 +189,12 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
 
 def main(_):
-    dataset_filename = os.path.join("data/hallucination", f"{FLAGS.dataset_name}.csv")
-    dataset_dir = os.path.join("data/hallucination", FLAGS.dataset_name)
+    logging.info("="*60)
+    logging.info("Computing LLM Neural Network Topology")
+    logging.info("="*60)
+    
+    dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
+    dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name
     os.makedirs(dataset_dir, exist_ok=True)
 
     model_name = FLAGS.llm_model_name
@@ -199,13 +205,28 @@ def main(_):
     dir_name = os.path.join(dataset_dir, model_dir)
     os.makedirs(dir_name, exist_ok=True)
 
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
+    logging.info(f"Model: {model_name}")
+    logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
+    logging.info(f"Layers: {FLAGS.llm_layer}")
+    logging.info(f"Network density: {FLAGS.network_density}")
+    logging.info(f"Sparse mode: {FLAGS.sparse}")
+    logging.info(f"Batch size: {FLAGS.batch_size}")
+    logging.info(f"Output directory: {dir_name}")
+    logging.info(f"Number of GPUs: {len(FLAGS.gpu_id)}")
+    logging.info(f"Number of workers: {FLAGS.num_workers}")
+    
     layer_list = FLAGS.llm_layer
 
     queue = Queue()
 
+    logging.info("\nStarting multiprocessing pipeline...")
+    
     producers = []
     hf_model_name = hf_model_name_map.get(model_name, model_name)
+    logging.info(f"Starting {len(FLAGS.gpu_id)} producer process(es)...")
     for i, gpu_id in enumerate(FLAGS.gpu_id):
+        logging.info(f"  Producer {i} using GPU {gpu_id}")
         p = Process(
             target=run_llm,
             args=(
@@ -228,6 +249,7 @@ def main(_):
 
     num_workers = FLAGS.num_workers
     consumers = []
+    logging.info(f"Starting {num_workers} consumer worker(s)...")
     for worker_idx in range(num_workers):
         p = Process(
             target=run_corr,
@@ -235,12 +257,20 @@ def main(_):
         p.start()
         consumers.append(p)
 
+    logging.info("\nProcessing dataset...")
     for producer in producers:
         producer.join()
+    logging.info("All producers completed")
+    
     for _ in range(num_workers):
         queue.put("STOP")
     for consumer in consumers:
         consumer.join()
+    logging.info("All consumers completed")
+    
+    logging.info("\n" + "="*60)
+    logging.info("✓ Neural topology computation completed successfully")
+    logging.info("="*60)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 from absl import app, flags, logging
 import os
+from pathlib import Path
 
 import torch
 torch.set_default_dtype(torch.float32)
@@ -29,6 +30,7 @@ flags.DEFINE_boolean("in_memory", True, "In-memory dataset.")
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 FLAGS = flags.FLAGS
 
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 def eval_model(model, test_data_loader, device):
     test_loss, test_gauc, test_auc, _ = test_fn(model, test_data_loader, device)
@@ -76,10 +78,7 @@ def main(_):
     else:
         save_model_name_2 = f"{FLAGS.llm_model_name_2}_step{FLAGS.ckpt_step_2}"
     save_model_name = f"{save_model_name_1}_{save_model_name_2}"
-    model_save_path = os.path.join(
-        f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}", 
-        f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
-    )
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
     model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     eval_model(model, test_data_loader, device)

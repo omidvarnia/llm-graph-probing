@@ -1,10 +1,14 @@
-from absl import app, flags
+from absl import app, flags, logging
 from collections import defaultdict
 import os
 from tqdm import tqdm
 
 import numpy as np
 import pandas as pd
+
+from pathlib import Path
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
@@ -18,12 +22,12 @@ def load_neural_topology_data(model_name, ckpt_step, layer, feature_name):
     
     # Construct model directory path
     if ckpt_step == -1:
-        model_dir = f"data/hallucination/{model_name}"
+        model_dir = main_dir / "data/hallucination" / model_name
     else:
-        model_dir = f"data/hallucination/{model_name}_step{ckpt_step}"
+        model_dir = main_dir / "data/hallucination" / f"{model_name}_step{ckpt_step}"
     
     # Load the original dataset to get question_id mappings
-    dataset_file = "data/hallucination/truthfulqa-validation.csv"
+    dataset_file = main_dir / "data/hallucination" / "truthfulqa.csv"
     df = pd.read_csv(dataset_file)
     
     topology_data = defaultdict(lambda: {'true': [], 'false': []})
@@ -181,24 +185,40 @@ def print_statistics(question_metrics):
     
 
 def main(_):
+    logging.info("="*60)
+    logging.info("Graph Analysis: Neural Topology Correlation")
+    logging.info("="*60)
+    
     model_name = FLAGS.llm_model_name
     if FLAGS.ckpt_step == -1:
-        model_dir = f"data/hallucination/{model_name}"
+        model_dir = main_dir / "data/hallucination" / model_name
     else:
-        model_dir = f"data/hallucination/{model_name}_step{FLAGS.ckpt_step}"
+        model_dir = main_dir / "data/hallucination" / f"{model_name}_step{FLAGS.ckpt_step}"
     
-    print(f"Loading neural topology data from: {model_dir}")
-    print(f"Analyzing layer: {FLAGS.layer}")
+    logging.info(f"Model: {FLAGS.llm_model_name}")
+    logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
+    logging.info(f"Layer: {FLAGS.layer}")
+    logging.info(f"Feature: {FLAGS.feature}")
+    logging.info(f"Data directory: {model_dir}")
     
-    # Load the neural topology data
+    logging.info("\nLoading neural topology data...")
     topology_data = load_neural_topology_data(FLAGS.llm_model_name, FLAGS.ckpt_step, FLAGS.layer, FLAGS.feature)
+    logging.info(f"Loaded data for {len(topology_data)} questions")
 
-    # Calculate correlation metrics
+    logging.info("\nCalculating correlation metrics...")
     question_metrics = calculate_correlation_metrics(topology_data)
+    logging.info(f"Computed metrics for {len(question_metrics)} questions")
     
-    # Print statistics
+    logging.info("\nStatistical Analysis:")
     diff = print_statistics(question_metrics)
-    np.save(f"{FLAGS.llm_model_name}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy", np.array(diff))
+    
+    output_file = f"{FLAGS.llm_model_name}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy"
+    np.save(output_file, np.array(diff))
+    logging.info(f"\nSaved results to: {output_file}")
+    
+    logging.info("\n" + "="*60)
+    logging.info("✓ Graph analysis completed successfully")
+    logging.info("="*60)
 
 
 if __name__ == "__main__":

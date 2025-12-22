@@ -7,10 +7,13 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import torch
+from pathlib import Path
 
 from hallucination.utils import format_prompt_ccs
 from utils.constants import hf_model_name_map
 from utils.model_utils import load_tokenizer_and_model
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_enum(
     "dataset_name",
@@ -113,8 +116,8 @@ def run_save(queue, layer_list, p_save_path, worker_idx, suffix):
 
 
 def main(_):
-    dataset_filename = os.path.join("data/hallucination", f"{FLAGS.dataset_name}.csv")
-    dataset_dir = os.path.join("data/hallucination", FLAGS.dataset_name)
+    dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
+    dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name
     os.makedirs(dataset_dir, exist_ok=True)
 
     model_name = FLAGS.llm_model_name

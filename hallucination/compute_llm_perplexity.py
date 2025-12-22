@@ -3,7 +3,7 @@ from multiprocessing import Process, Queue
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from tqdm import tqdm
-
+from pathlib import Path
 from evaluate import load
 perplexity_revised = load("graph_probing/perplexity_revised.py", module_type="metric")
 import numpy as np
@@ -12,6 +12,8 @@ from transformers import AutoTokenizer
 
 from hallucination.utils import format_prompt
 from utils.constants import hf_model_name_map
+
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 flags.DEFINE_enum(
     "dataset_name",
@@ -97,8 +99,8 @@ def run_save(queue, p_save_path, worker_idx):
 
 
 def main(_):
-    dataset_filename = os.path.join("data/hallucination", f"{FLAGS.dataset_name}.csv")
-    dataset_dir = os.path.join("data/hallucination", FLAGS.dataset_name)
+    dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
+    dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name
     os.makedirs(dataset_dir, exist_ok=True)
 
     model_name = FLAGS.llm_model_name

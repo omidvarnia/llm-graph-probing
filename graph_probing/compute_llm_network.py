@@ -1,5 +1,26 @@
 from absl import app, flags
 import os
+import sys
+from pathlib import Path
+import logging
+
+# Configure logging (suppress timestamps/levels as run_logged already adds them)
+logging.basicConfig(level=logging.INFO, format='[COMPUTE_NETWORK] %(message)s')
+# Suppress absl logging noise
+import os as _os
+_os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+# Get main directory from environment or use current directory
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
+# Add project root to path to ensure utils package can be found
+project_root = Path(__file__).parent.parent
+# Ensure project root is first in path, even before current directory
+project_root_str = str(project_root)
+if project_root_str in sys.path:
+    sys.path.remove(project_root_str)
+sys.path.insert(0, project_root_str)
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from tqdm import tqdm
 
@@ -67,10 +88,11 @@ def run_llm(
                 sentence_indices.append(sentence_idx)
 
     if len(input_texts) > 0:
+        logging.info(f"[Worker {rank}] Processing {len(input_texts)} texts...")
         tokenizer.pad_token = tokenizer.eos_token
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
+            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}: Processing batches"):
                 inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
                 model_output = model(
                     input_ids=inputs["input_ids"].to(model.device),
@@ -83,17 +105,21 @@ def run_llm(
                 actual_batch_size = batch_hidden_states.shape[1]
                 batch_sentence_indices = sentence_indices[i:i+actual_batch_size]
                 queue.put((batch_hidden_states, batch_attention_mask, batch_sentence_indices))
+        logging.info(f"[Worker {rank}] ✓ Completed processing")
 
 
 def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
     from torch_geometric.utils import dense_to_sparse
+    logging.info(f"[Correlation Worker {worker_idx}] Started computing correlations...")
     with torch.no_grad():
+        processed = 0
         while True:
             batch = queue.get(block=True)
             if batch == "STOP":
+                logging.info(f"[Correlation Worker {worker_idx}] ✓ Completed {processed} sentences")
                 break
             hidden_states, attention_mask, sentence_indices = batch
-            for i, sentence_idx in enumerate(sentence_indices):
+            for i, sentence_idx in enumerate(tqdm(sentence_indices, desc=f"Corr Worker {worker_idx}: Saving", position=worker_idx+10)):
                 p_dir_name = f"{p_save_path}/{sentence_idx}"
                 os.makedirs(p_dir_name, exist_ok=True)
                 sentence_attention_mask = attention_mask[i]
@@ -123,12 +149,94 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
 
 
 def main(_):
+    logging.info("="*60)
+    logging.info("STEP 2: Neural Topology (Network Graph) Computation")
+    logging.info("="*60)
+    logging.info(f"Dataset: {FLAGS.dataset}")
+    logging.info(f"Model: {FLAGS.llm_model_name} (checkpoint: {FLAGS.ckpt_step})")
+    logging.info(f"Layer(s): {FLAGS.llm_layer}")
+    logging.info(f"Network density: {FLAGS.network_density}")
+    logging.info(f"Batch size: {FLAGS.batch_size}")
+    logging.info(f"GPU IDs: {FLAGS.gpu_id}")
+    logging.info(f"Number of workers: {FLAGS.num_workers}")
+
+    hf_model_name = hf_model_name_map[FLAGS.llm_model_name]
+    if FLAGS.dataset == "art":
+        dataset_filename = main_dir / "st_data" / "art.csv"
+    elif FLAGS.dataset == "world_place":
+        dataset_filename = main_dir / "st_data" / "world_place.csv"
+    else:
+        revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
+        if hf_model_name.startswith("EleutherAI") and revision != "main":
+            dataset_filename = main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+        else:
+            dataset_filename = main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+
+    revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
+    if hf_model_name.startswith("EleutherAI") and revision != "main":
+        dir_name = main_dir / f"data/graph_probing/{FLAGS.dataset}-{FLAGS.llm_model_name}-{revision}"
+    else:
+        dir_name = main_dir / f"data/graph_probing/{FLAGS.dataset}-{FLAGS.llm_model_name}"
+    os.makedirs(dir_name, exist_ok=True)
+
+    layer_list = FLAGS.llm_layer
+    queue = Queue()
+    producers = []
+
+    logging.info(f"\n[1/3] Spawning {len(FLAGS.gpu_id)} producer processes...")
+    for i, gpu_id in enumerate(FLAGS.gpu_id):
+        logging.info(f"  Producer {i} on GPU {gpu_id}")
+        p = Process(
+            target=run_llm,
+            args=(
+                i,
+                len(FLAGS.gpu_id),
+                queue,
+                dataset_filename,
+                hf_model_name,
+                FLAGS.ckpt_step,
+                gpu_id,
+                FLAGS.batch_size,
+                layer_list,
+                FLAGS.resume,
+                dir_name,
+                FLAGS.dataset,
+            )
+        )
+        p.start()
+        producers.append(p)
+
+    num_workers = FLAGS.num_workers
+    consumers = []
+    logging.info(f"\n[2/3] Spawning {num_workers} correlation computation workers...")
+    for worker_idx in range(num_workers):
+        logging.info(f"  Correlation worker {worker_idx}")
+        p = Process(
+            target=run_corr,
+            args=(queue, layer_list, dir_name, worker_idx, FLAGS.network_density))
+        p.start()
+        consumers.append(p)
+
+    logging.info("\n[3/3] Waiting for all processes to complete...")
+    for producer in producers:
+        producer.join()
+    logging.info("✓ All producers completed")
+    for _ in range(num_workers):
+        queue.put("STOP")
+    for consumer in consumers:
+        consumer.join()
+    logging.info("✓ All consumers completed")
+    
+    logging.info("="*60)
+    logging.info("✓ STEP 2 Complete: Neural Topology Computation Finished")
+    logging.info(f"✓ Results saved to: {dir_name}")
+    logging.info("="*60)
     model_name = FLAGS.llm_model_name
     hf_model_name = hf_model_name_map[model_name]
     if FLAGS.ckpt_step == -1:
-        dir_name = f"data/graph_probing/{model_name}/{FLAGS.dataset}"
+        dir_name = main_dir / f"data/graph_probing/{model_name}/{FLAGS.dataset}"
     else:
-        dir_name = f"data/graph_probing/{model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
+        dir_name = main_dir / f"data/graph_probing/{model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
     
     if FLAGS.dataset == "art":
         dataset_filename = "st_data/art.csv"
@@ -137,9 +245,9 @@ def main(_):
     else:
         revision = "main" if FLAGS.ckpt_step == -1 else f"step{FLAGS.ckpt_step}"
         if hf_model_name.startswith("EleutherAI") and revision != "main":
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
+            dataset_filename = main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}-{revision}.csv"
         else:
-            dataset_filename = f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
+            dataset_filename = main_dir / f"data/graph_probing/{FLAGS.dataset}-10k-{FLAGS.llm_model_name}.csv"
 
     os.makedirs(dir_name, exist_ok=True)
 

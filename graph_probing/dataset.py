@@ -9,7 +9,9 @@ from torch.utils.data import DataLoader as TorchDataLoader
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import dense_to_sparse
+from pathlib import Path
 
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
 def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test_set_ratio, seed, target=["perplexities"], dataset_name="openwebtext", normalize_targets=True):
     data = pd.read_csv(dataset_filename)
@@ -34,7 +36,7 @@ def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test
     return train_data_split, test_data_split, targets, path
 
 
-def wrap_data(path, network_id, llm_layer, target_value, network_density, from_sparse_data=False):
+def wrap_data(path, network_id, llm_layer, target_value, network_density, from_sparse_data=True):
     if not from_sparse_data:
         network = np.load(os.path.join(path, f"{network_id}/layer_{llm_layer}_corr.npy")).astype(np.float32)
         percentile_threshold = network_density * 100
@@ -85,7 +87,7 @@ def get_brain_network_dataloader(
     llm_model_name="gpt2",
     ckpt_step=-1,
     llm_layer=0,
-    dataset_path="data/graph_probing",
+    dataset_path=main_dir / "data" / "graph_probing",
     batch_size=32,
     eval_batch_size=32,
     num_workers=4,
@@ -199,7 +201,7 @@ def get_brain_network_linear_dataloader(
     llm_model_name="gpt2",
     ckpt_step=-1,
     llm_layer=0,
-    dataset_path="data/graph_probing",
+    dataset_path=main_dir / "data" / "graph_probing",
     batch_size=32,
     eval_batch_size=32,
     num_workers=4,

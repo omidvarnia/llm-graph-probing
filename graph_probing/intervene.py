@@ -9,13 +9,15 @@ import pandas as pd
 import torch
 torch.set_grad_enabled(False)
 import torch.multiprocessing as mp
-
+from pathlib import Path
 from transformer_lens import HookedTransformer
 
 from utils.constants import hf_model_name_map
 from utils.model_utils import get_num_nodes, wrap_chat_template
 
-flags.DEFINE_string("dataset_filename", "data/graph_probing/openwebtext-10k-gpt2.csv", "The dataset filename.")
+main_dir = Path(os.environ.get('MAIN_DIR', '.'))
+
+flags.DEFINE_string("dataset_filename", str(main_dir / "data" / "graph_probing" / "openwebtext-10k-gpt2.csv"), "The dataset filename.")
 flags.DEFINE_integer("num_questions", 20000, "Number of questions.")
 flags.DEFINE_string("llm_model_name", "qwen2.5-0.5b", "The name of the LLM model.")
 flags.DEFINE_integer("ckpt_step", -1, "The checkpoint step.")
