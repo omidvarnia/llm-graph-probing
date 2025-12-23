@@ -48,7 +48,7 @@ class TruthfulQADataset(Dataset):
 
         if self.in_memory:
             self.loaded_data = []
-            for idx in tqdm(range(len(self.network_indices))):
+            for idx in tqdm(range(len(self.network_indices)), desc="Loading graph data into memory"):
                 self.loaded_data.append(self._load_data(idx))
 
     def __len__(self):
@@ -196,7 +196,7 @@ class TruthfulQACCSDataset(TorchDataset):
         self.data_dir = os.path.join("data/hallucination", self.dataset_name, model_dir)
 
         self.loaded_data = []
-        for idx in tqdm(range(len(self.network_indices))):
+        for idx in tqdm(range(len(self.network_indices)), desc="Loading CCS features into memory"):
             self.loaded_data.append(self._load_data(idx))
 
         self.normalize_features()

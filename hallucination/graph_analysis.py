@@ -189,6 +189,7 @@ def main(_):
     logging.info("Graph Analysis: Neural Topology Correlation")
     logging.info("="*60)
     
+    # ===== CONFIGURATION =====
     model_name = FLAGS.llm_model_name
     if FLAGS.ckpt_step == -1:
         model_dir = main_dir / "data/hallucination" / model_name
@@ -201,15 +202,24 @@ def main(_):
     logging.info(f"Feature: {FLAGS.feature}")
     logging.info(f"Data directory: {model_dir}")
     
-    logging.info("\nLoading neural topology data...")
+    # ===== LOAD TOPOLOGY DATA =====
+    logging.info("\n" + "="*60)
+    logging.info("Loading neural topology data...")
+    logging.info("="*60)
     topology_data = load_neural_topology_data(FLAGS.llm_model_name, FLAGS.ckpt_step, FLAGS.layer, FLAGS.feature)
     logging.info(f"Loaded data for {len(topology_data)} questions")
 
-    logging.info("\nCalculating correlation metrics...")
+    # ===== COMPUTE METRICS =====
+    logging.info("\n" + "="*60)
+    logging.info("Calculating correlation metrics...")
+    logging.info("="*60)
     question_metrics = calculate_correlation_metrics(topology_data)
     logging.info(f"Computed metrics for {len(question_metrics)} questions")
     
-    logging.info("\nStatistical Analysis:")
+    # ===== STATISTICS & RESULTS =====
+    logging.info("\n" + "="*60)
+    logging.info("Statistical Analysis:")
+    logging.info("="*60)
     diff = print_statistics(question_metrics)
     
     output_file = f"{FLAGS.llm_model_name}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy"

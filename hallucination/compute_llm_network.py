@@ -99,7 +99,7 @@ def run_llm(
         sample_word_token_counts = [[len(tokens)] for tokens in answer_tokens]
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
+            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}: Processing {len(input_texts)} texts"):
                 inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
                 batch_input_ids = inputs["input_ids"]
                 batch_attention_mask = inputs["attention_mask"]
@@ -193,6 +193,7 @@ def main(_):
     logging.info("Computing LLM Neural Network Topology")
     logging.info("="*60)
     
+    # ===== LOAD CONFIGURATION =====
     dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
     dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name
     os.makedirs(dataset_dir, exist_ok=True)
@@ -220,8 +221,11 @@ def main(_):
 
     queue = Queue()
 
-    logging.info("\nStarting multiprocessing pipeline...")
+    logging.info("\n" + "="*60)
+    logging.info("Starting multiprocessing pipeline...")
+    logging.info("="*60)
     
+    # ===== START PRODUCER PROCESSES =====
     producers = []
     hf_model_name = hf_model_name_map.get(model_name, model_name)
     logging.info(f"Starting {len(FLAGS.gpu_id)} producer process(es)...")
@@ -249,7 +253,9 @@ def main(_):
 
     num_workers = FLAGS.num_workers
     consumers = []
+    logging.info(f"\n" + "="*60)
     logging.info(f"Starting {num_workers} consumer worker(s)...")
+    logging.info("="*60)
     for worker_idx in range(num_workers):
         p = Process(
             target=run_corr,
@@ -257,16 +263,18 @@ def main(_):
         p.start()
         consumers.append(p)
 
-    logging.info("\nProcessing dataset...")
+    logging.info("\n" + "="*60)
+    logging.info("Processing dataset...")
+    logging.info("="*60)
     for producer in producers:
         producer.join()
-    logging.info("All producers completed")
+    logging.info("✓ All producers completed")
     
     for _ in range(num_workers):
         queue.put("STOP")
     for consumer in consumers:
         consumer.join()
-    logging.info("All consumers completed")
+    logging.info("✓ All consumers completed")
     
     logging.info("\n" + "="*60)
     logging.info("✓ Neural topology computation completed successfully")

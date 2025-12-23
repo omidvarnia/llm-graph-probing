@@ -71,7 +71,7 @@ def run_llm(
         tokenizer.pad_token = tokenizer.eos_token
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}"):
+            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}: Computing embeddings"):
                 inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
                 batch_input_ids = inputs["input_ids"]
                 batch_attention_mask = inputs["attention_mask"]

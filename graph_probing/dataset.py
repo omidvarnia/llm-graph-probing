@@ -171,7 +171,7 @@ class BrainNetworkLinearDataset(TorchDataset):
         self.feature_density = feature_density
 
         self.loaded_data = []
-        for idx in tqdm(range(len(self.sentences_id)), desc="Loading linear data"):
+        for idx in tqdm(range(len(self.sentences_id)), desc="Loading linear probe data into memory"):
             self.loaded_data.append(self._load_data(idx))
 
     def __len__(self):

@@ -75,7 +75,7 @@ def test_fn(model, data_loader, device, num_layers):
     
     acc = accuracy_score(all_labels, all_preds)
     precision, recall, f1, _ = precision_recall_fscore_support(all_labels, all_preds, average='binary', zero_division=0)
-    cm = confusion_matrix(all_labels, all_preds)
+    cm = confusion_matrix(all_labels, all_preds)  # Shape: (2, 2) with [[TN, FP], [FN, TP]]
     
     return acc, precision, recall, f1, cm
 

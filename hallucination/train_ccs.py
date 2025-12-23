@@ -88,8 +88,9 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
 
         accuracy, precision, recall, f1, cm = test_fn_ccs(model, test_data_loader, device)
         torch.cuda.empty_cache()
+        tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
         logging.info(f"Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-        logging.info(f"Confusion Matrix:\n{cm}")
+        logging.info(f"Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
         for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
             writer.add_scalar(f"test/{metric}", value, epoch + 1)
         scheduler.step(accuracy)
@@ -110,7 +111,9 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     logging.info(f"Best Epoch: {best_metrics['epoch']}")
     for metric in ["accuracy", "precision", "recall", "f1"]:
         logging.info(f"Best Test {metric.capitalize()}: {best_metrics[metric]:.4f}")
-    logging.info(f"Best Confusion Matrix:\n{best_metrics['cm']}")
+    cm = best_metrics['cm']
+    tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+    logging.info(f"Best Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
  
 
 def main(_):

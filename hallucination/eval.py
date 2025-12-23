@@ -134,7 +134,10 @@ def main(_):
         logging.info(f"\nLoading model from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
-    logging.info("\nEvaluating...")
+    # ===== EVALUATION =====
+    logging.info("\n" + "="*60)
+    logging.info("Evaluating...")
+    logging.info("="*60)
     accuracy, precision, recall, f1, cm = test_fn(model, test_loader, device, num_layers=FLAGS.num_layers)
     torch.cuda.empty_cache()
     
@@ -145,7 +148,8 @@ def main(_):
     logging.info(f"Precision: {precision:.4f}")
     logging.info(f"Recall: {recall:.4f}")
     logging.info(f"F1 Score: {f1:.4f}")
-    logging.info(f"Confusion Matrix:\n{cm}")
+    tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+    logging.info(f"Confusion Matrix (TN={tn} (true negatives), FP={fp} (false positives), FN={fn} (false negatives), TP={tp} (true positives)):\n{cm}")
     logging.info("="*60)
 
 

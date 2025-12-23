@@ -100,8 +100,9 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
 
         accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
         torch.cuda.empty_cache()
+        tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
         logging.info(f"Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-        logging.info(f"Confusion Matrix:\n{cm}")
+        logging.info(f"Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
         for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
             writer.add_scalar(f"test/{metric}", value, epoch + 1)
         scheduler.step(accuracy)
@@ -122,7 +123,9 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     logging.info(f"Best Epoch: {best_metrics['epoch']}")
     for metric in ["accuracy", "precision", "recall", "f1"]:
         logging.info(f"Best Test {metric.capitalize()}: {best_metrics[metric]:.4f}")
-    logging.info(f"Best Confusion Matrix:\n{best_metrics['cm']}")
+    cm = best_metrics['cm']
+    tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+    logging.info(f"Best Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
  
 
 def main(_):
@@ -130,6 +133,7 @@ def main(_):
     logging.info("Training Hallucination Detection Probes")
     logging.info("="*60)
     
+    # ===== DEVICE & CONFIGURATION =====
     device = torch.device(f"cuda:{FLAGS.gpu_id}")
     logging.info(f"Using device: {device}")
 
@@ -222,7 +226,10 @@ def main(_):
         logging.info(f"Resuming from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
-    logging.info("\nStarting training...")
+    # ===== TRAINING =====
+    logging.info("\n" + "="*60)
+    logging.info("Starting training...")
+    logging.info("="*60)
     train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)
     
     logging.info("\n" + "="*60)

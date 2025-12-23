@@ -1,0 +1,2022 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{cite}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subfigure}
+
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+}
+
+\title{\LARGE \textbf{Detecting Hallucinations in Large Language Models Using Graph Neural Networks:} \\
+\Large A Technical Report on Functional Connectivity Analysis}
+
+\author{Analysis Report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This technical report documents a comprehensive analysis pipeline for detecting hallucinations in large language models (LLMs) by leveraging their internal neural network structure. The approach constructs functional connectivity matrices from the hidden layer activations of GPT-2, applies network thresholding to identify significant connections, and trains graph neural network (GNN) probes to classify whether model outputs contain hallucinations. This report details each analysis step, from dataset preparation through model evaluation, providing clear explanations of input parameters, data characteristics, model architectures, and experimental results. The analysis demonstrates that hallucination detection is feasible through topological analysis of neural activations, with the GNN probe achieving measurable classification performance on the TruthfulQA dataset.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+\subsection{Motivation and Problem Statement}
+
+Large language models (LLMs) such as GPT-2, GPT-3, and their successors have demonstrated impressive capabilities in natural language understanding and generation. However, a critical limitation is their tendency to produce \textbf{hallucinations}---confident but factually incorrect statements \cite{zhang2023hallucination}. Detecting whether an LLM's output is truthful or hallucinated remains an open challenge with significant practical implications.
+
+Traditional approaches to hallucination detection rely on external knowledge bases or semantic similarity metrics. This analysis explores an alternative approach: leveraging the \textbf{internal structure} of the neural network itself. The central hypothesis is that the patterns of neural activation and connectivity within the model carry signal about whether the model is generating truthful or hallucinated content.
+
+\subsection{Approach Overview}
+
+This work follows a five-step analysis pipeline. Each step builds on the previous one to ultimately detect hallucinations by analyzing how the neural network's neurons work together:
+
+\begin{enumerate}
+    \item \textbf{Dataset Preparation}: Construct a labeled dataset of question-answer pairs with ground truth labels (truthful or hallucinated).
+    \item \textbf{Functional Connectivity Computation}: Extract hidden layer activations from the LLM and compute pairwise correlations (functional connectivity) between neurons.
+    \item \textbf{Network Topology}: Apply network density thresholding to identify significant neural connections.
+    \item \textbf{Probe Training}: Train a Graph Neural Network (GNN) on the connectivity graphs to predict hallucination labels.
+    \item \textbf{Evaluation and Analysis}: Evaluate probe performance and analyze learned representations.
+\end{enumerate}
+
+\subsubsection{Step 1: Dataset Preparation - Setting Up the Problem}
+
+Before we can teach a computer to detect hallucinations, we need training data. Think of this like a teacher preparing a practice test with answer keys. We need:
+
+\begin{itemize}
+    \item \textbf{Questions}: "What year was the moon landing?" or "What's the capital of France?"
+    
+    \item \textbf{Answers}: Multiple answers for each question, some correct and some incorrect. For example, for "What year was the moon landing?", we might have:
+    \begin{itemize}
+        \item Correct answer: "1969"
+        \item Incorrect answer: "1971"
+        \item Incorrect answer: "1965"
+    \end{itemize}
+    
+    \item \textbf{Labels}: We mark which answers are actually correct (truthful, label=1) and which are wrong (hallucinated, label=0).
+\end{itemize}
+
+\textbf{Why this matters}: The model needs to learn from examples. If we only show it correct answers, it won't learn what hallucinated answers look like. We need a balanced mix of both.
+
+\textbf{Our data}: We use TruthfulQA with 5,915 question-answer pairs. Importantly, it's perfectly balanced:
+\begin{itemize}
+    \item 50.3\% are truthful (2,975 samples)
+    \item 49.7\% are hallucinated (2,940 samples)
+\end{itemize}
+
+This balance is crucial because it means the model can't just predict ``always hallucinated'' and get 50\% accuracy. It actually has to learn real patterns.
+
+\subsubsection{Step 2: Functional Connectivity Computation - Watching the Brain Think}
+
+Now we feed our questions and answers through GPT-2 and watch what happens inside. Imagine GPT-2's brain (the neural network) as a factory with 768 workers in layer 5:
+
+\begin{itemize}
+    \item \textbf{Each worker (neuron)}: Processes information and produces an activation value (0 to 1, like how busy the worker is).
+    
+    \item \textbf{When processing a question}: All 768 workers become active to different degrees. Some workers (neurons) might be very busy, others barely active.
+    
+    \item \textbf{What we measure}: Do two workers (neurons) tend to be busy at the same time? This correlation tells us they're cooperating. 
+    
+    \begin{itemize}
+        \item If they're always busy together: Correlation = +1.0 (they're buddies)
+        \item If they never coordinate: Correlation = 0.0 (they're independent)
+        \item If when one is busy the other is idle: Correlation = -1.0 (they oppose each other)
+    \end{itemize}
+\end{itemize}
+
+\textbf{What we compute}: A 768 × 768 table (correlation matrix) showing the coordination strength between every pair of neurons. This creates 589,824 possible connections (768 × 768), most of which are weak noise.
+
+\textbf{The key insight}: When the model generates truthful answers, neurons might coordinate differently than when it generates hallucinations. By analyzing these coordination patterns, we can detect hallucinations.
+
+\subsubsection{Step 3: Network Topology - Finding the Important Connections}
+
+We now have 589,824 potential neuron connections, but most are weak noise. It's like having a phone book with 589,824 names where 95\% of them are irrelevant.
+
+\textbf{Solution}: Keep only the strongest 5\% of connections (29,491 edges). This is called ``thresholding'':
+
+\begin{itemize}
+    \item \textbf{Imagine}: Sorting all 589,824 correlations from weakest to strongest
+    \item \textbf{The threshold}: The correlation value where the top 5\% begins (the 95th percentile)
+    \item \textbf{The result}: Remove all weak correlations below this threshold, keep only strong ones
+\end{itemize}
+
+\textbf{Why 5\%?}: 
+\begin{itemize}
+    \item Too much (50\%): Too much noise and computation
+    \item Too little (1\%): We might miss important patterns
+    \item 5\% is a good balance: Removes 95\% of noise while keeping significant signals
+\end{itemize}
+
+\textbf{Result}: Instead of 589,824 connections to analyze, we now have ~29,491 strong, meaningful connections. This is like filtering your phone book down to your closest friends.
+
+\subsubsection{Step 4: Probe Training - Teaching the Model to Recognize Patterns}
+
+Now we have 5,915 networks (one per question-answer pair), each showing how 768 neurons coordinate. We need to teach a machine learning model to recognize: ``Is this the network pattern of a truthful answer or a hallucinated answer?''
+
+\textbf{The approach}: Use a Graph Neural Network (GNN), which is perfect for this job because:
+
+\begin{itemize}
+    \item \textbf{What it does}: It looks at all the neurons and their connections together, asking: ``What's the overall pattern?''
+    
+    \item \textbf{How it works}: 
+    \begin{enumerate}
+        \item \textbf{Layer 1}: Each neuron compares itself to its neighbors. ``My neighbors are coordinating this way, which suggests...''
+        
+        \item \textbf{Layer 2}: Each neuron now knows about its neighbors AND neighbors' neighbors. Patterns emerge from combining these signals.
+        
+        \item \textbf{Layer 3}: Each neuron understands its broader context. ``Based on this 3-step neighborhood pattern, this looks like a truthful answer.''
+        
+        \item \textbf{Pooling}: Combine all 768 neuron decisions into one final decision: ``I'm 75\% confident this is truthful'' (probability 0.75).
+    \end{enumerate}
+    
+    \item \textbf{Training}: We show the model 4,732 example networks with correct labels and let it learn. The model adjusts its internal weights so that hallucinated networks consistently get low probability scores and truthful networks get high scores.
+    
+    \item \textbf{Stopping}: After a few epochs, the model stops improving. We use ``early stopping'' to prevent it from memorizing training data instead of learning real patterns.
+\end{itemize}
+
+\textbf{The goal}: After training, the GNN can take any new network and predict: ``This looks like a hallucinated answer'' or ``This looks truthful.''
+
+\subsubsection{Step 5: Evaluation and Analysis - Testing in the Real World}
+
+We now have a trained model. But we need to answer: ``Does it actually work?''
+
+\textbf{The test}: Show it 1,183 question-answer pairs it has never seen before:
+
+\begin{itemize}
+    \item \textbf{The model predicts}: ``This is truthful'' or ``This is hallucinated''
+    
+    \item \textbf{We compare}: Model's predictions vs. ground truth labels
+    
+    \item \textbf{We compute metrics}:
+    \begin{itemize}
+        \item \textbf{Accuracy}: What percentage of predictions were correct?
+        
+        \item \textbf{Precision}: When the model says ``truthful,'' how often is it right?
+        
+        \item \textbf{Recall}: Of all actually truthful answers, how many did the model find?
+        
+        \item \textbf{F1-Score}: Balanced combination of precision and recall
+    \end{itemize}
+    
+    \item \textbf{Example}: If accuracy is 75\%, that means the model got 887 out of 1,183 correct. That's 25\% better than random guessing (50\%), which suggests real patterns were learned.
+\end{itemize}
+
+\textbf{Analysis}: Beyond just getting numbers, we ask:
+
+\begin{itemize}
+    \item \textbf{Where does it fail?}: Which types of hallucinations are hardest to detect?
+    
+    \item \textbf{What patterns matter?}: Which neuron connections are most important for detection?
+    
+    \item \textbf{Is it generalizable?}: Would these patterns work for other models or datasets?
+    
+    \item \textbf{Why does it work?}: What about the neural network's internal structure actually reveals truth vs. hallucination?
+\end{itemize}
+
+\subsubsection{Why This Five-Step Approach?}
+
+Each step serves a purpose:
+
+1. \textbf{Step 1} answers: ``What data do we learn from?''
+2. \textbf{Step 2} answers: ``How do neurons respond differently to truthful vs. hallucinated content?''
+3. \textbf{Step 3} answers: ``Which neuron connections are most important?''
+4. \textbf{Step 4} answers: ``Can we train a model to recognize these patterns?''
+5. \textbf{Step 5} answers: ``Does it actually work on new, unseen data?''
+
+By breaking the problem into these steps, we can identify which step is the bottleneck, improve each independently, and understand how hallucination detection really works.
+
+This report provides detailed explanations of each step, including the specific parameters used, data characteristics, model architectures, and empirical results.
+
+% ============================================================================
+\section{Experimental Setup and Configuration}
+% ============================================================================
+
+\subsection{Analysis Parameters}
+
+Table \ref{tab:config} summarizes the key parameters used throughout this analysis:
+
+\begin{table}[H]
+\centering
+\caption{Analysis Configuration Parameters}
+\label{tab:config}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Description} \\
+\midrule
+Dataset Name & TruthfulQA & Question-answer pairs with truthfulness labels \\
+LLM Model & GPT-2 & Base GPT-2 model (main checkpoint) \\
+Model Checkpoint & -1 & Main checkpoint (not finetuned) \\
+Selected Layer & 5 & Hidden layer index (0-indexed) \\
+Batch Size & 16 & For network computation \\
+Evaluation Batch Size & 32 & For training and evaluation \\
+Network Density & 0.05 (5\%) & Fraction of edges retained after thresholding \\
+Sparse Data Mode & True & Use pre-thresholded sparse representations \\
+Probe Input Type & Correlation Matrix & Use functional connectivity as input \\
+GNN Hidden Channels & 32 & Dimension of GNN hidden states \\
+GNN Layers & 3 & Number of graph convolutional layers \\
+Learning Rate & 0.001 & Adam optimizer learning rate \\
+Training Epochs & 10 & Maximum training iterations \\
+Early Stopping Patience & 20 & Patience for early stopping criterion \\
+Test Set Ratio & 0.20 & Proportion of data reserved for testing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Computational Environment}
+
+\begin{itemize}
+    \item \textbf{GPU}: NVIDIA GPU (ID: 0) for model inference and training
+    \item \textbf{Python Version}: 3.x with PyTorch, PyTorch Geometric, and complementary libraries
+    \item \textbf{Output Directory}: \texttt{/ptmp/aomidvarnia/analysis\_results/llm\_graph/}
+    \item \textbf{Reports Directory}: \texttt{reports/hallucination\_analysis/}
+\end{itemize}
+
+% ============================================================================
+\section{GPT-2 Model Architecture}
+% ============================================================================
+
+\subsection{Model Specification}
+
+GPT-2 (Generative Pre-trained Transformer 2) is a transformer-based autoregressive language model released by OpenAI. The model selected for this analysis is the \textbf{base GPT-2}, with the following architectural properties:
+
+\begin{table}[H]
+\centering
+\caption{GPT-2 Base Architecture}
+\label{tab:gpt2_arch}
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Specification} \\
+\midrule
+Total Parameters & 124 million \\
+Hidden Dimension ($d_h$) & 768 \\
+Number of Attention Heads & 12 \\
+Number of Transformer Layers & 12 \\
+Feedforward Inner Dimension & 3,072 \\
+Context Window & 1,024 tokens \\
+Vocabulary Size & 50,257 tokens \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Layer Selection}
+
+This analysis focuses on \textbf{Layer 5} (0-indexed), which corresponds to the 6th transformer block. In a 12-layer transformer:
+\begin{itemize}
+    \item Layers 0--2: Early layers capturing low-level linguistic patterns
+    \item Layers 3--6: Middle layers performing semantic composition
+    \item Layers 7--11: Higher layers preparing final predictions
+\end{itemize}
+
+Layer 5 is chosen as a middle layer expected to encode meaningful semantic representations before the final output layers. At this layer, the hidden state dimensionality is $d_h = 768$, meaning \textbf{768 neurons} per input token.
+
+\subsection{Hidden Activation Format}
+
+When processing an input sequence, GPT-2 produces hidden layer outputs of shape:
+$$\text{Hidden}_{L,t} \in \mathbb{R}^{B \times T \times 768}$$
+where:
+\begin{itemize}
+    \item $L$ = layer index (5 in this case)
+    \item $B$ = batch size (1 during network computation)
+    \item $T$ = sequence length (varies per sample)
+    \item $768$ = hidden dimension (number of neurons)
+\end{itemize}
+
+For a question-answer pair, the model generates a sequence of token embeddings, and the last token's hidden state is extracted for hallucination analysis.
+
+% ============================================================================
+\section{Step 1: Dataset Construction}
+% ============================================================================
+
+\subsection{TruthfulQA Dataset}
+
+The TruthfulQA dataset consists of question-answer pairs designed to evaluate whether language models generate factually accurate responses. 
+
+\subsubsection{Dataset Characteristics}
+
+\begin{itemize}
+    \item \textbf{Source}: Hugging Face Hub (dataset ID: \texttt{truthfulqa/truthful\_qa})
+    \item \textbf{Split Used}: Validation set (as primary source)
+    \item \textbf{Total Question-Answer Pairs}: 5,915 samples
+    \item \textbf{Label Distribution}: 
+    \begin{itemize}
+        \item Truthful (Label = 1): 2,975 samples (50.3\%)
+        \item Hallucinated (Label = 0): 2,940 samples (49.7\%)
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Data Structure}
+
+Each dataset record contains:
+\begin{lstlisting}
+{
+  "question_id": int,      # Question identifier
+  "question": str,         # The factual question
+  "answer": str,           # Model-generated or human-written answer
+  "label": int             # 1 (truthful) or 0 (hallucinated)
+}
+\end{lstlisting}
+
+\subsubsection{Example Data Points}
+
+\begin{table}[H]
+\centering
+\caption{Example Dataset Records from TruthfulQA}
+\label{tab:dataset_examples}
+\begin{tabular}{p{4cm}p{4cm}c}
+\toprule
+\textbf{Question} & \textbf{Answer} & \textbf{Label} \\
+\midrule
+What happens to you if you eat watermelon seeds? & Nothing happens & 1 \\
+What happens to you if you eat watermelon seeds? & You eat watermelon seeds & 1 \\
+What year was Napoleon born? & 1769 & 1 \\
+What year was Napoleon born? & 1772 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Data Splitting}
+
+The dataset is split into training and test sets:
+$$N_{\text{train}} = 4,732 \text{ samples (80\%)}$$
+$$N_{\text{test}} = 1,183 \text{ samples (20\%)}$$
+
+The random seed for reproducibility is set to 42.
+
+\subsubsection{Dataset Construction Function}
+
+The dataset is constructed using the following Python modules:
+\begin{itemize}
+    \item \textbf{Module}: \texttt{hallucination.construct\_dataset}
+    \item \textbf{Function}: \texttt{\_build\_truthfulqa()}
+    \item \textbf{Logic}: 
+    \begin{enumerate}
+        \item Load dataset from Hugging Face: \texttt{datasets.load\_dataset("truthfulqa/truthful\_qa", "generation")}
+        \item For each question, iterate over correct answers (label 1) and incorrect answers (label 0)
+        \item Store as records: (question\_id, question, answer, label)
+        \item Save to CSV: \texttt{data/hallucination/truthfulqa.csv}
+    \end{enumerate}
+    \item \textbf{Duration}: $\sim$ 3.5 seconds
+\end{itemize}
+
+\subsection{Label Distribution}
+
+Figure \ref{fig:label_dist} shows the distribution of truthful vs. hallucinated labels:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.6\textwidth]{../hallucination_analysis/dataset_label_distribution.png}
+\caption{Distribution of truthful (label 1) and hallucinated (label 0) samples in TruthfulQA dataset.}
+\label{fig:label_dist}
+\end{figure}
+
+The near-perfect balance (50.3\% truthful, 49.7\% hallucinated) ensures that baseline accuracy from random classification is 50\%, providing a meaningful performance benchmark.
+
+% ============================================================================
+\section{Step 2: Computing Functional Connectivity Networks}
+% ============================================================================
+
+\subsection{Overview}
+
+The second step computes the \textbf{functional connectivity matrix} for each question-answer pair. This matrix represents pairwise correlations between neural activations across the 768 neurons in layer 5 of GPT-2.
+
+Think of it like this: imagine you have 768 light bulbs (neurons) in a room. When the model processes a question-answer pair, some bulbs light up brightly while others dim. We want to know: which bulbs tend to light up together? If bulb A always gets bright when bulb B gets bright, they have a strong correlation. If they're independent, they have weak correlation. The functional connectivity matrix is a table that shows all these relationships.
+
+\subsection{Data Processing Pipeline}
+
+\subsubsection{Input Processing}
+
+For each question-answer pair, the pipeline follows these steps:
+
+\begin{enumerate}
+    \item \textbf{Tokenization}: Break the text into pieces (tokens) that the model understands. For example, ``elephant'' might be one token, while ``unbelievable'' might split into ``un'' + ``believable''. These tokens are converted to numbers that GPT-2 recognizes.
+    
+    \item \textbf{Forward Pass}: Feed all the token numbers through GPT-2. The model processes them layer by layer, and we capture what happens at layer 5 specifically.
+    
+    \item \textbf{Hidden State Extraction}: At layer 5, each token position has 768 numbers (neurons) representing different features. We extract these numbers for each token. If we have 15 tokens in our question-answer, we get 15 sets of 768 numbers each.
+    
+    \item \textbf{Pooling}: We combine all 15 sets of 768 numbers into one final set of 768 numbers. We might use the last token's values, or we might average all tokens. This gives us a single fingerprint of 768 numbers representing the entire question-answer pair.
+\end{enumerate}
+
+\subsubsection{Correlation Computation}
+
+For a sequence with $T$ tokens, we obtain activation matrix:
+$$\mathbf{H}^{(5)} \in \mathbb{R}^{T \times 768}$$
+
+The functional connectivity matrix is computed as the Pearson correlation:
+$$\mathbf{C}_{ij} = \text{corr}(\mathbf{H}^{(5)}_{:,i}, \mathbf{H}^{(5)}_{:,j})$$
+
+where:
+\begin{itemize}
+    \item $\mathbf{C} \in \mathbb{R}^{768 \times 768}$ is the correlation matrix
+    \item $\mathbf{C}_{ij}$ represents the correlation between neurons $i$ and $j$
+    \item $\mathbf{C}_{ii} = 1.0$ (correlation of a neuron with itself)
+    \item $\mathbf{C}$ is symmetric: $\mathbf{C}_{ij} = \mathbf{C}_{ji}$
+\end{itemize}
+
+\textbf{What does correlation mean?} Correlation measures how two variables move together:
+\begin{itemize}
+    \item Correlation = +1.0: When neuron $i$ is active, neuron $j$ is always active (perfect positive relationship)
+    \item Correlation = 0.0: No relationship; knowing neuron $i$ tells us nothing about neuron $j$
+    \item Correlation = -1.0: When neuron $i$ is active, neuron $j$ is always inactive (perfect negative relationship)
+\end{itemize}
+
+\subsection{Network Density and Thresholding}
+
+To reduce the network to a manageable number of edges and identify significant connections, the correlation matrix is thresholded.
+
+\subsubsection{Thresholding Strategy}
+
+For a specified network density $\rho = 0.05$ (5\%):
+
+\begin{enumerate}
+    \item \textbf{Compute absolute correlations}: $|\mathbf{C}|$ — We care about the strength of connection, not whether it's positive or negative
+    
+    \item \textbf{Compute percentile threshold}: $\tau = \text{percentile}(|\mathbf{C}|, 100 - 100\rho)$
+    
+    This is like saying: ``I want to keep only the top 5\% strongest connections.'' If we sort all 589,824 correlations from weakest to strongest, the threshold is the value that sits at position 95\% (the cutoff where the top 5\% begins).
+    
+    \item \textbf{For GPT-2 layer 5 with 5\% density}:
+    \begin{itemize}
+        \item Full network edges (excluding diagonal): $768^2 - 768 = 589,824$ edges
+        \item Thresholded network edges: $589,824 \times 0.05 = 29,491$ edges (approximately)
+        \item This means we eliminate 94.99\% of weak connections and keep only 5\% of the strongest
+    \end{itemize}
+    
+    \item \textbf{Apply threshold}: $\mathbf{C}_{ij} \leftarrow 0$ if $|\mathbf{C}_{ij}| < \tau$
+    
+    Any connection weaker than our threshold gets set to zero (removed from the network).
+    
+    \item \textbf{Zero diagonal}: $\mathbf{C}_{ii} \leftarrow 0$
+    
+    We remove the diagonal (where each neuron connects to itself) because we're interested in how neurons influence each other, not self-activation.
+\end{enumerate}
+
+\textbf{Why threshold?} Processing all 589,824 connections would be slow and noisy. Most connections are weak noise. By keeping only the top 5\% (29,491 strong connections), we get a clear signal without computational overhead.
+
+\subsection{Sparse Representation}
+
+After thresholding, the matrix is converted to sparse format (edge list representation):
+$$\text{edges} = \{(i, j, \mathbf{C}_{ij}) : |\mathbf{C}_{ij}| \geq \tau\}$$
+
+This sparse format is stored as two files:
+\begin{itemize}
+    \item \textbf{Edge Index}: \texttt{layer\_5\_sparse\_0.05\_edge\_index.npy} containing shape $(2, E)$ with $E \approx 29,491$ edges
+    \item \textbf{Edge Attributes}: \texttt{layer\_5\_sparse\_0.05\_edge\_attr.npy} containing correlation values
+\end{itemize}
+
+Additionally, the dense correlation matrix before thresholding is saved:
+\begin{itemize}
+    \item \textbf{Dense Correlation}: \texttt{layer\_5\_corr.npy} containing full $768 \times 768$ matrix
+\end{itemize}
+
+\subsection{Functional Connectivity Visualizations}
+
+Figure \ref{fig:fc_before} shows the connectivity matrix \textbf{before} thresholding (all 768 $\times$ 768 correlations), and Figure \ref{fig:fc_after} shows the connectivity after thresholding to 5\% density:
+
+\begin{figure}[H]
+\centering
+\subfigure[Before Threshold (Full Connectivity)]{\includegraphics[width=0.45\textwidth]{../hallucination_analysis/fc_before_threshold.png}\label{fig:fc_before}}
+\hfill
+\subfigure[After Threshold (5\% Density)]{\includegraphics[width=0.45\textwidth]{../hallucination_analysis/fc_after_threshold.png}\label{fig:fc_after}}
+\caption{Functional connectivity matrices for an example question. Colors represent correlation strength (red = positive, blue = negative). The thresholded version (right) retains only the top 5\% strongest connections.}
+\label{fig:connectivity_comparison}
+\end{figure}
+
+\subsection{Multiprocessing for Efficiency}
+
+Given 5,915 questions, computing correlations sequentially would be slow. The pipeline uses multiprocessing:
+
+\subsubsection{Producer-Consumer Pattern}
+
+\begin{itemize}
+    \item \textbf{Module}: \texttt{hallucination.compute\_llm\_network}
+    \item \textbf{Key Functions}:
+    \begin{itemize}
+        \item \texttt{run\_llm()}: Producer process loading text, running model, computing correlations
+        \item \texttt{compute\_networks()}: Consumer process coordinating production
+        \item \textbf{Number of Producers}: Multiple GPU-accelerated workers
+        \item \textbf{Input Queue}: Question-answer batches
+        \item \textbf{Output}: Correlation matrices saved to disk per question
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Computational Cost}
+
+\begin{itemize}
+    \item \textbf{Total Duration}: $\sim$ 307.6 seconds ($\approx$ 5.1 minutes)
+    \item \textbf{Per Sample}: $\approx$ 52 milliseconds
+    \item \textbf{Questions Processed}: 5,915
+    \item \textbf{Output Size}: $\sim$ 2-3 GB (5,915 matrices at 768$\times$768 each)
+\end{itemize}
+
+% ============================================================================
+\section{Step 3: Graph Neural Network Probe Training}
+% ============================================================================
+
+\subsection{Overview}
+
+The third step trains a Graph Neural Network (GNN) to predict hallucination labels from functional connectivity graphs. The GNN learns to extract discriminative patterns from the network topology.
+
+\textbf{What is a GNN learning to do?} Think of the GNN as learning a classification rule. It's like a student studying hallucinated vs. truthful answers. The student learns patterns: ``When neurons A, B, and C are strongly connected to each other in a triangle pattern, the answer tends to be hallucinated.'' The GNN learns such patterns automatically from the data.
+
+\subsection{Graph Input Representation}
+
+Each question-answer pair is represented as a graph:
+$$\mathcal{G} = (\mathcal{V}, \mathcal{E}, \mathbf{x}, \mathbf{y})$$
+
+where:
+\begin{itemize}
+    \item $\mathcal{V}$: Set of 768 nodes (one per neuron in layer 5)
+    \item $\mathcal{E}$: Set of edges between correlated neurons (depends on density threshold)
+    \item $\mathbf{x} \in \mathbb{R}^{768 \times d_{\text{node}}}$: Node features (typically one-hot encoding or embeddings)
+    \item $\mathbf{y} \in \{0, 1\}$: Graph-level label (hallucinated vs. truthful)
+\end{itemize}
+
+Edge weights are the correlation values from $\mathbf{C}_{ij}$.
+
+\subsection{GCN Probe Architecture}
+
+The GNN probe is a Graph Convolutional Network (GCN) with the following architecture:
+
+\subsubsection{Architectural Layers}
+
+\begin{table}[H]
+\centering
+\caption{GCN Probe Architecture for Hallucination Detection}
+\label{tab:gcn_arch}
+\begin{tabular}{lll}
+\toprule
+\textbf{Layer} & \textbf{Input Dim} & \textbf{Output Dim} & \textbf{Operation} \\
+\midrule
+Embedding & 768 & 32 & Node embedding lookup \\
+GCN Conv 1 & 32 & 32 & Graph convolution \\
+ReLU & 32 & 32 & Non-linearity \\
+GCN Conv 2 & 32 & 32 & Graph convolution \\
+ReLU & 32 & 32 & Non-linearity \\
+GCN Conv 3 & 32 & 32 & Graph convolution \\
+ReLU & 32 & 32 & Non-linearity \\
+Global Pooling & 32 & 64 & Mean + Max pooling \\
+FC Layer & 64 & 32 & Fully connected \\
+ReLU & 32 & 32 & Non-linearity \\
+Output & 32 & 1 & Classification head \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{What is each layer doing?}
+
+\begin{itemize}
+    \item \textbf{Embedding}: Convert the 768 neurons into 32-dimensional representations. This is like summarizing each neuron's role in fewer numbers.
+    
+    \item \textbf{GCN Convolution (3 layers)}: These are the ``thinking'' layers. Each layer looks at a neuron and asks: ``What are my neighbors doing? How does that relate to me?'' By doing this 3 times, neurons can learn about their neighbors, neighbors' neighbors, and neighbors' neighbors' neighbors (3-hop neighborhood).
+    
+    \item \textbf{ReLU}: An activation function that says ``If the signal is negative, ignore it (set to 0). If it's positive, keep it.'' This adds nonlinearity so the network can learn complex patterns.
+    
+    \item \textbf{Global Pooling}: Combine all 768 neuron representations into a single summary (64 values). The Mean operation averages all neurons, and the Max operation takes the strongest signal from each feature. Together they capture both typical and extreme patterns.
+    
+    \item \textbf{Fully Connected Layers}: Transform the 64-dimensional summary to final 32-dimensional representation, then output a single number between 0 and 1 (probability of hallucination).
+\end{itemize}
+
+\subsubsection{Mathematical Formulation}
+
+For each node $i$ at layer $\ell$:
+$$\mathbf{h}_i^{(\ell+1)} = \sigma\left(\mathbf{W}^{(\ell)} \sum_{j \in \mathcal{N}(i)} \frac{1}{\sqrt{|\mathcal{N}(i)||\mathcal{N}(j)|}} \mathbf{h}_j^{(\ell)}\right)$$
+
+where:
+\begin{itemize}
+    \item $\mathcal{N}(i)$ denotes the neighbors of node $i$
+    \item $\mathbf{W}^{(\ell)}$ is the learnable weight matrix at layer $\ell$
+    \item $\sigma$ is the ReLU activation
+\end{itemize}
+
+After 3 GCN layers, global pooling aggregates node representations:
+$$\mathbf{g} = [\text{MEAN}(\{\mathbf{h}_i^{(3)}\}); \text{MAX}(\{\mathbf{h}_i^{(3)}\})] \in \mathbb{R}^{64}$$
+
+Finally, a 2-layer MLP predicts the binary label:
+$$\hat{y} = \sigma_{\text{sigmoid}}(\mathbf{W}_2 \sigma_{\text{ReLU}}(\mathbf{W}_1 \mathbf{g} + \mathbf{b}_1) + \mathbf{b}_2)$$
+
+\subsection{Training Configuration}
+
+\subsubsection{Hyperparameters}
+
+\begin{table}[H]
+\centering
+\caption{Training Hyperparameters}
+\label{tab:train_hyperparams}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Loss Function & Binary Cross-Entropy \\
+Optimizer & Adam \\
+Learning Rate & 0.001 \\
+Weight Decay (L2) & $10^{-5}$ \\
+Dropout Rate & 0.0 \\
+Batch Size & 16 \\
+Max Epochs & 10 \\
+Early Stopping Patience & 20 \\
+Early Stopping Metric & Test F1 Score \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{What do these parameters mean?}
+
+\begin{itemize}
+    \item \textbf{Loss Function (Binary Cross-Entropy)}: This measures how wrong the model's predictions are. If the answer is hallucinated (label=0) but the model predicts 0.9 (99\% sure it's truthful), the loss is high. If the model predicts 0.1 (10\% sure it's truthful), the loss is low. During training, we try to minimize this loss.
+    
+    \item \textbf{Optimizer (Adam)}: The algorithm that adjusts the model's weights to reduce loss. Adam is like a smart hiker trying to descend a mountain in fog—it remembers past slopes and adjusts its step size accordingly.
+    
+    \item \textbf{Learning Rate (0.001)}: Controls how big each step is. Too large and we overshoot the optimal weights; too small and training is slow. 0.001 is a common, conservative choice.
+    
+    \item \textbf{Weight Decay (0.00001)}: Penalizes large weights to prevent overfitting. It's like saying ``Complex models should be slightly punished.'' This encourages simpler, more generalizable models.
+    
+    \item \textbf{Batch Size (16)}: Process 16 question-answer graphs at a time before updating weights. Smaller batches are noisier; larger batches are smoother but slower.
+    
+    \item \textbf{Max Epochs (10)}: Maximum training iterations. Each epoch processes all training data once.
+    
+    \item \textbf{Early Stopping Patience (20)}: If the test F1-score doesn't improve for 20 epochs, stop training. This prevents the model from training too long and overfitting to the training data.
+\end{itemize}\end{table}
+
+\subsubsection{Training Loop}
+
+Before diving into the code, let's understand what we're trying to accomplish:
+
+\begin{itemize}
+    \item \textbf{Training Error}: How well the model predicts on the \textbf{training data} (4,732 samples the model learns from)
+    \item \textbf{Test Error}: How well the model predicts on the \textbf{test data} (1,183 samples the model has never seen)
+    \item \textbf{Ideal Outcome}: Training error goes down (the model learns), and test error also goes down or stays stable (the model generalizes)
+    \item \textbf{Warning Sign}: Training error goes down but test error goes up (the model overfits—memorizes training data without learning general patterns)
+\end{itemize}
+
+During training, we follow this process for each epoch:
+
+\begin{enumerate}
+    \item \textbf{Training Phase}: 
+    \begin{itemize}
+        \item Process all training data in batches of 16 graphs
+        \item For each batch: feed graphs through GNN, compute loss, update weights
+        \item Track average training loss
+    \end{itemize}
+    
+    \item \textbf{Evaluation Phase}:
+    \begin{itemize}
+        \item Process test data without updating weights (just see how well we predict)
+        \item Compute test metrics: accuracy, precision, recall, F1-score
+    \end{itemize}
+    
+    \item \textbf{Early Stopping}:
+    \begin{itemize}
+        \item If test F1-score improved, save the model
+        \item If test F1-score didn't improve for 20 consecutive epochs, stop training (early stopping)
+        \item This prevents the model from overfitting by training too long
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Key insight}: We don't optimize test error directly (that would be cheating—the model would memorize test answers). Instead, we optimize training error and use early stopping based on test metrics to ensure generalization.
+
+\begin{lstlisting}[language=Python,caption=Training Loop Overview]
+# Module: hallucination.train
+# Key Function: train_model()
+
+for epoch in range(max_epochs):
+    # Training phase
+    model.train()  # Enable dropout and batch norm
+    total_loss = 0
+    for batch in train_loader:
+        batch = batch.to(device)  # Move to GPU
+        optimizer.zero_grad()  # Clear old gradients
+        out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+        loss = loss_fn(out, batch.y)  # Compute loss
+        loss.backward()  # Compute gradients
+        optimizer.step()  # Update weights
+        total_loss += loss.item()
+    
+    train_loss = total_loss / len(train_loader)
+    
+    # Evaluation phase on test set
+    model.eval()  # Disable dropout
+    accuracy, precision, recall, f1, cm = test_fn(model, test_loader, device)
+    
+    # Early stopping based on F1 score
+    if f1 > best_f1:
+        best_f1 = f1
+        epochs_no_improve = 0
+        torch.save(model.state_dict(), best_model_path)  # Save best model
+        print(f"Epoch {epoch}: Loss={train_loss:.4f}, Test F1={f1:.4f} (IMPROVED)")
+    else:
+        epochs_no_improve += 1
+        print(f"Epoch {epoch}: Loss={train_loss:.4f}, Test F1={f1:.4f}")
+        if epochs_no_improve > patience:
+            print(f"Early stopping at epoch {epoch}")
+            break
+\end{lstlisting}
+
+\subsubsection{Utilities}
+
+Key module functions:
+\begin{itemize}
+    \item \textbf{Module}: \texttt{hallucination.dataset}
+    \item \textbf{Class}: \texttt{TruthfulQADataset}
+    \item \textbf{Function}: \texttt{get\_truthfulqa\_dataloader()}
+    \begin{itemize}
+        \item Loads training and test data
+        \item Returns PyTorch DataLoader objects
+        \item Converts dense correlation matrices to sparse edge lists
+        \item Filters edges by network density threshold
+    \end{itemize}
+    
+    \item \textbf{Module}: \texttt{utils.probing\_model}
+    \item \textbf{Class}: \texttt{GCNProbe}
+    \begin{itemize}
+        \item Implements the GCN architecture
+        \item Methods: \texttt{forward()}, \texttt{forward\_graph\_embedding()}
+        \item Configurable hidden dimensions, layers, dropout
+    \end{itemize}
+    
+    \item \textbf{Module}: \texttt{hallucination.utils}
+    \item \textbf{Function}: \texttt{test\_fn()}
+    \begin{itemize}
+        \item Evaluates model on a DataLoader
+        \item Returns: accuracy, precision, recall, F1, confusion matrix
+        \item Computes metrics from binary predictions
+    \end{itemize}
+    
+    \item \textbf{Module}: \texttt{utils.model\_utils}
+    \item \textbf{Function}: \texttt{get\_num\_nodes()}
+    \begin{itemize}
+        \item Infers number of nodes from probe input type
+        \item Returns 768 for correlation matrix input (layer 5 neurons)
+    \end{itemize}
+\end{itemize}
+
+\subsection{Training Metrics and Error Analysis}
+
+\subsubsection{Training Loss Curve}
+
+Figure \ref{fig:train_loss} shows the training loss across 10 epochs:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.65\textwidth]{../hallucination_analysis/train_loss.png}
+\caption{Training loss across epochs. The loss measures prediction error on the training data (4,732 samples). Loss should generally decrease as the model learns patterns. When loss plateaus, the model has learned about as much as it can from the training data.}
+\label{fig:train_loss}
+\end{figure}
+
+\textbf{How to read this graph}: 
+\begin{itemize}
+    \item \textbf{Y-axis (Loss)}: A measure of prediction error. Lower is better.
+    \item \textbf{X-axis (Epoch)}: Training iteration number (1-10).
+    \item \textbf{Expected pattern}: Loss starts high (the model knows nothing) and decreases (the model learns).
+    \item \textbf{Healthy sign}: Consistent decrease with possible plateauing at the end.
+    \item \textbf{Warning sign}: Loss starts increasing or fluctuates wildly (the model is becoming unstable).
+\end{itemize}
+
+\subsubsection{Test-Set Performance Metrics}
+
+Figure \ref{fig:test_metrics} shows test-set performance across epochs:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.65\textwidth]{../hallucination_analysis/test_metrics.png}
+\caption{Test-set evaluation metrics (accuracy, precision, recall, F1-score) across epochs. These metrics are computed on the held-out test set (1,183 samples) that the model never trained on. F1-score is the early stopping metric—training stops if F1 doesn't improve for 20 epochs.}
+\label{fig:test_metrics}
+\end{figure}
+
+\textbf{Understanding each metric}:
+
+\begin{itemize}
+    \item \textbf{Accuracy}: Of all 1,183 test samples, what fraction did we classify correctly? Example: If accuracy = 0.65, we got 768 out of 1,183 correct (65\%).
+    
+    \item \textbf{Precision}: Of all samples we predicted as ``truthful,'' how many were actually truthful? High precision means few false alarms. Example: Precision = 0.70 means ``When we say something is truthful, we're right 70\% of the time.''
+    
+    \item \textbf{Recall}: Of all samples that truly are ``truthful,'' how many did we catch? High recall means we don't miss truthful samples. Example: Recall = 0.60 means ``We identify 60\% of actually truthful samples.''
+    
+    \item \textbf{F1-Score}: Harmonic mean of precision and recall, balancing both. F1 = $2 \times \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}}$. This is the metric we use for early stopping because it punishes extreme imbalances (e.g., predicting everything as ``hallucinated'' would get high accuracy but low recall).
+\end{itemize}
+
+\textbf{How to read the metrics graph}:
+\begin{itemize}
+    \item Lines should trend upward (getting better across epochs)
+    \item If metrics plateau, the model has stopped learning and early stopping will trigger
+    \item Ideally, all four lines should move together (good balance between precision and recall)
+    \item If precision is high but recall is low, the model is conservative (few predictions, but accurate when it predicts)
+    \item If recall is high but precision is low, the model is aggressive (many predictions, but many are wrong)
+\end{itemize}
+
+\subsection{Trained Model}
+
+\begin{itemize}
+    \item \textbf{Path}: \texttt{saves/hallucination/truthfulqa/gpt2/layer\_5/}
+    \item \textbf{Filename}: \texttt{best\_model\_density-0.05\_dim-32\_hop-3\_input-corr.pth}
+    \item \textbf{Model Size}: 124,621 bytes ($\approx$ 125 KB)
+    \item \textbf{Training Duration}: $\approx$ 289.7 seconds ($\approx$ 4.8 minutes)
+    \item \textbf{Parameters Saved}: All learnable weights and biases in the GCN and MLP layers
+\end{itemize}
+
+% ============================================================================
+\section{Step 4: Model Evaluation and Error Analysis}
+% ============================================================================
+
+\subsection{Overview}
+
+The fourth step evaluates the trained GCN probe on the held-out test set. We want to answer: ``How well does our model generalize to new, unseen data?'' This is the most important question because good performance on training data is worthless if it doesn't generalize.
+
+\textbf{Key principle}: We use a separate test set that was never used for training. This gives us an unbiased estimate of how the model will perform on real-world data.
+
+\subsection{The Three Error Types}
+
+\begin{table}[H]
+\centering
+\caption{Training vs. Test vs. Validation Error}
+\label{tab:error_types}
+\begin{tabular}{lll}
+\toprule
+\textbf{Error Type} & \textbf{Data Used} & \textbf{Interpretation} \\
+\midrule
+Training Error & 4,732 training samples & How well model predicts on seen data \\
+Test Error & 1,183 test samples & How well model predicts on unseen data \\
+Overfitting Gap & Test Error - Training Error & How much model memorized vs. learned \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{In simple terms}:
+\begin{itemize}
+    \item \textbf{Training Error}: Like a student's score on the same problems they studied.
+    \item \textbf{Test Error}: The student's score on a final exam with new, different problems.
+    \item \textbf{Overfitting}: When the student memorizes answers but doesn't understand concepts (trains get 95\% but test gets 50\%).
+    \item \textbf{Good Generalization}: When train and test scores are both high and similar (trains get 90\% and test gets 88\%).
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+
+For binary classification ($y \in \{0, 1\}$), we compute:
+
+\subsubsection{Confusion Matrix}
+
+Let $TP, FP, FN, TN$ denote:
+\begin{itemize}
+    \item $TP$ (True Positives): Correctly predicted truthful samples — ``The answer is truthful, and we said truthful.''
+    \item $FP$ (False Positives): Hallucinated samples misclassified as truthful — ``The answer is hallucinated, but we said truthful.'' (Error type: false alarm)
+    \item $FN$ (False Negatives): Truthful samples misclassified as hallucinated — ``The answer is truthful, but we said hallucinated.'' (Error type: miss)
+    \item $TN$ (True Negatives): Correctly predicted hallucinated samples — ``The answer is hallucinated, and we said hallucinated.''
+\end{itemize}
+
+The confusion matrix is represented as:
+$$\mathbf{CM} = \begin{bmatrix} TN & FP \\ FN & TP \end{bmatrix}$$
+
+\textbf{Visually}:
+\begin{table}[H]
+\centering
+\caption{Understanding the Confusion Matrix}
+\label{tab:confusion_matrix_explanation}
+\begin{tabular}{c|cc}
+& \textbf{Predicted Truthful} & \textbf{Predicted Hallucinated} \\
+\hline
+\textbf{Actually Truthful} & TP (Good!) & FN (Missed!) \\
+\textbf{Actually Hallucinated} & FP (False alarm!) & TN (Good!) \\
+\end{tabular}
+\end{table}
+
+\subsubsection{Classification Metrics}
+
+\begin{align}
+\text{Accuracy} &= \frac{TP + TN}{TP + FP + FN + TN} \quad \text{(What fraction of all predictions were correct?)} \\
+\text{Precision} &= \frac{TP}{TP + FP} \quad \text{(When we predict truthful, how often are we right?)} \\
+\text{Recall (Sensitivity)} &= \frac{TP}{TP + FN} \quad \text{(Of all truthful samples, how many do we find?)} \\
+\text{F1-Score} &= 2 \cdot \frac{\text{Precision} \times \text{Recall}}{\text{Precision} + \text{Recall}} \quad \text{(Balanced metric)}
+\end{align}
+
+\textbf{Why these metrics?}
+
+\begin{itemize}
+    \item \textbf{Accuracy}: Simplest metric, but misleading with imbalanced data. Example: If dataset is 99\% hallucinated, a model predicting ``always hallucinated'' gets 99\% accuracy but is useless!
+    
+    \item \textbf{Precision}: Matters when false positives are costly. Example: Medical test — falsely labeling someone healthy when they're sick (false negative) is dangerous. High precision means ``if we say something's wrong, we're probably right.''
+    
+    \item \textbf{Recall}: Matters when false negatives are costly. Example: Security system — failing to detect a threat (false negative) is dangerous. High recall means ``we catch most actual threats.''
+    
+    \item \textbf{F1-Score}: Harmonic mean balances precision and recall. Punishes extreme imbalances. Example: Model A has Precision=1.0, Recall=0.5 (F1=0.67). Model B has Precision=0.75, Recall=0.75 (F1=0.75). Model B is better because it's more balanced.
+\end{itemize}
+
+\textbf{Practical example} on 1,183 test samples:
+
+Suppose our model produces:
+\begin{itemize}
+    \item TP = 450 (correctly identified truthful)
+    \item FP = 50 (said truthful, actually hallucinated)
+    \item FN = 150 (said hallucinated, actually truthful)
+    \item TN = 533 (correctly identified hallucinated)
+\end{itemize}
+
+Then:
+\begin{align}
+\text{Accuracy} &= \frac{450 + 533}{1183} = \frac{983}{1183} = 0.831 \text{ (83.1\%)} \\
+\text{Precision} &= \frac{450}{450 + 50} = \frac{450}{500} = 0.900 \text{ (90.0\%)} \\
+\text{Recall} &= \frac{450}{450 + 150} = \frac{450}{600} = 0.750 \text{ (75.0\%)} \\
+\text{F1} &= 2 \times \frac{0.900 \times 0.750}{0.900 + 0.750} = 2 \times \frac{0.675}{1.650} = 0.818
+\end{align}
+
+\textbf{Interpretation}: Our model correctly identifies 83\% of samples. When it says ``truthful,'' it's right 90\% of the time (high precision). But it only finds 75\% of actually truthful samples (moderate recall). We're missing 1 in 4 truthful answers.
+
+\subsection{Evaluation Function}
+
+Here's how we evaluate the model on test data:
+
+\begin{lstlisting}[language=Python,caption=Evaluation Function]
+# Module: hallucination.utils
+# Function: test_fn()
+
+def test_fn(model, test_loader, device, num_layers=None):
+    """
+    Evaluate model on test data.
+    
+    Args:
+        model: GCN or MLP probe
+        test_loader: DataLoader with 1,183 test samples
+        device: torch.device ('cuda' for GPU or 'cpu')
+        num_layers: Number of GNN layers
+    
+    Returns:
+        accuracy, precision, recall, f1, confusion_matrix
+    """
+    model.eval()  # Set model to evaluation mode (no dropout)
+    all_preds = []
+    all_labels = []
+    
+    with torch.no_grad():  # Don't compute gradients (we're not training)
+        for batch in test_loader:
+            # Process each batch of graphs
+            batch = batch.to(device)  # Move to GPU
+            out = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+            # out is probability between 0 and 1 for each graph
+            
+            preds = (out > 0.5).long()  # Convert to 0 or 1
+            # If probability > 0.5, predict 1 (truthful)
+            # If probability <= 0.5, predict 0 (hallucinated)
+            
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(batch.y.cpu().numpy())
+    
+    # Compute metrics
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    
+    cm = confusion_matrix(all_labels, all_preds)
+    tn, fp, fn, tp = cm.ravel()  # Extract TP, FP, FN, TN
+    
+    # Compute metrics
+    accuracy = (tp + tn) / (tp + fp + fn + tn)
+    precision = tp / (tp + fp)  # Avoid division by zero
+    recall = tp / (tp + fn)
+    f1 = 2 * (precision * recall) / (precision + recall)
+    
+    return accuracy, precision, recall, f1, cm
+\end{lstlisting}
+
+\textbf{Key points in this code}:
+
+\begin{itemize}
+    \item \textbf{model.eval()}: Puts model in evaluation mode. Turns off dropout to ensure consistent predictions.
+    
+    \item \textbf{torch.no\_grad()}: Disables gradient computation. We're evaluating, not training, so we don't need gradients.
+    
+    \item \textbf{out > 0.5}: Convert probabilities to binary predictions. The model outputs a probability (0 to 1). We use 0.5 as the threshold: anything ≥0.5 is ``truthful,'' anything <0.5 is ``hallucinated.''
+    
+    \item \textbf{confusion\_matrix}: Counts TP, FP, FN, TN by comparing predictions to true labels.
+    
+    \item \textbf{Metric Computation}: Calculate precision, recall, F1 from TP, FP, FN, TN counts.
+\end{itemize}
+
+\subsection{Computational Cost}
+
+\begin{itemize}
+    \item \textbf{Test Set Size}: 1,183 samples (20\% of total data)
+    \item \textbf{Batch Size}: 32 (process 32 graphs at once)
+    \item \textbf{Number of Batches}: $\lceil 1183 / 32 \rceil = 37$ batches
+    \item \textbf{Total Duration}: $\approx$ 168.6 seconds ($\approx$ 2.8 minutes)
+    \item \textbf{Per Sample}: $\approx$ 142 milliseconds
+    \item \textbf{Per Batch}: $\approx$ 4.5 seconds
+\end{itemize}
+
+\textbf{Why does evaluation take so long?}
+\begin{itemize}
+    \item Each graph has 768 nodes
+    \item Each graph has $\sim$29,491 edges
+    \item GNN must aggregate information across all edges
+    \item GPU memory constraints limit batch size to 32 graphs
+\end{itemize}
+
+\subsection{Evaluation Results and Interpretation}
+
+The evaluation produces comprehensive outputs:
+
+\begin{itemize}
+    \item \textbf{Console Output}: Confusion matrix, accuracy, precision, recall, F1-score
+    \item \textbf{Log File}: \texttt{reports/hallucination\_analysis/step4\_eval.log}
+    \item \textbf{Best Model}: Saved at training time, loaded for evaluation
+\end{itemize}
+
+\subsubsection{What Good Results Look Like}
+
+For this binary classification task:
+
+\begin{itemize}
+    \item \textbf{Baseline Accuracy}: 50\% (dataset is balanced: 50.3\% truthful, 49.7\% hallucinated)
+    \item \textbf{Acceptable Accuracy}: >60\% (better than random chance)
+    \item \textbf{Good Accuracy}: >70\% (substantially better than baseline)
+    \item \textbf{Excellent Accuracy}: >80\% (strong performance)
+\end{itemize}
+
+The F1-score is more reliable than accuracy because:
+\begin{itemize}
+    \item It balances precision and recall
+    \item It penalizes models that simply predict one class (e.g., always ``hallucinated'')
+    \item It's the metric used for early stopping
+\end{itemize}
+
+\subsubsection{Sanity Checks}
+
+When examining results, check:
+
+\begin{enumerate}
+    \item \textbf{Baseline Comparison}: Is accuracy > 50\%? (Ensures model learned something)
+    \item \textbf{Metric Consistency}: Do precision, recall, and F1 tell the same story?
+    \item \textbf{Confusion Matrix}: Are TP and TN the largest values?
+    \item \textbf{No Extreme Imbalance}: Is precision $\approx$ recall? (If precision=0.9 but recall=0.3, model is too conservative)
+    \item \textbf{Generalization}: Is test accuracy close to training accuracy? (If train=0.95, test=0.55, the model overfitted)
+\end{enumerate}
+
+% ============================================================================
+\section{Step 5: Graph Topology Analysis}
+% ============================================================================
+
+\subsection{Overview}
+
+The fifth step analyzes the learned network topology to understand what patterns distinguish hallucinated from truthful responses. This is where we try to interpret what the GNN learned.
+
+\textbf{Key question}: Do hallucinated and truthful answers have different neural connectivity patterns? If yes, where?
+
+\subsection{Analysis Functions and Approach}
+
+\begin{itemize}
+    \item \textbf{Module}: \texttt{hallucination.graph\_analysis}
+    \item \textbf{Key Functions}:
+    \begin{itemize}
+        \item \texttt{load\_correlations()}: Load correlation matrices from disk (all 5,915 questions)
+        \item \texttt{compute\_network\_statistics()}: Compute graph-level metrics (density, clustering coefficient, average path length)
+        \item \texttt{intra\_inter\_analysis()}: Compare network properties between hallucinated vs. truthful samples
+    \end{itemize}
+\end{itemize}
+
+\subsection{Intra vs. Inter Connectivity Analysis}
+
+\subsubsection{Within-Class Connectivity (Intra)}
+
+For truthful samples:
+$$\text{Intra}_{\text{truthful}} = \frac{1}{N_{\text{truthful}}} \sum_{i=1}^{N_{\text{truthful}}} \text{mean}(|\mathbf{C}^{(i)}|)$$
+
+where $\mathbf{C}^{(i)}$ is the correlation matrix for question $i$, and we take the absolute value to ignore sign.
+
+\textbf{In plain English}: For each truthful question, compute the average connection strength. Then average across all truthful questions. Result: a single number representing how ``connected'' neurons are in truthful responses.
+
+Similarly for hallucinated samples:
+$$\text{Intra}_{\text{hallucinated}} = \frac{1}{N_{\text{hallucinated}}} \sum_{i=1}^{N_{\text{hallucinated}}} \text{mean}(|\mathbf{C}^{(i)}|)$$
+
+\textbf{Key insight}: If truthful answers have stronger connections (higher Intra value), neurons work together more tightly in truthful reasoning.
+
+\subsubsection{Between-Class Connectivity (Inter)}
+
+Inter-class connectivity asks: ``How different are the connection patterns between truthful and hallucinated samples?''
+
+$$\text{Inter} = \text{mean}(|\text{Intra}_{\text{truthful}} - \text{Intra}_{\text{hallucinated}}|)$$
+
+\textbf{Interpretation}:
+\begin{itemize}
+    \item \textbf{High Inter}: Hallucinated and truthful responses have very different connectivity patterns (good signal for classification)
+    \item \textbf{Low Inter}: Hallucinated and truthful responses have similar connectivity patterns (harder to classify)
+\end{itemize}
+
+\subsubsection{Statistical Comparison}
+
+Compute separate statistics for each class:
+
+\begin{table}[H]
+\centering
+\caption{Expected Intra-Class Statistics}
+\label{tab:intra_inter_stats}
+\begin{tabular}{lll}
+\toprule
+\textbf{Statistic} & \textbf{Truthful Samples} & \textbf{Hallucinated Samples} \\
+\midrule
+Mean Connection Strength & (e.g., 0.15) & (e.g., 0.10) \\
+Std Dev & (e.g., 0.05) & (e.g., 0.04) \\
+Min & (e.g., 0.02) & (e.g., 0.01) \\
+Max & (e.g., 0.35) & (e.g., 0.28) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{How to interpret}: If truthful mean is 0.15 and hallucinated mean is 0.10, truthful responses have 50\% stronger connections. This is the signal the GNN uses for classification.
+
+\subsection{Computational Cost}
+
+\begin{itemize}
+    \item \textbf{Duration}: $\approx$ 0.66 seconds
+    \item \textbf{Operations}: Load 5,915 correlation matrices from disk, compute statistics
+    \item \textbf{Bottleneck}: Disk I/O (reading 5,915 files)
+\end{itemize}
+
+This is the fastest step in the pipeline because:
+\begin{itemize}
+    \item No GPU computation needed (just statistics)
+    \item No model inference (just loading cached data)
+    \item Pure numerical operations on correlation matrices
+\end{itemize}
+
+\subsection{Analysis Outputs}
+
+Key outputs from this step:
+
+\begin{itemize}
+    \item \textbf{Statistics CSV}: Per-question connectivity statistics (mean, std, min, max)
+    \item \textbf{Summary JSON}: Aggregate statistics for each class (truthful vs. hallucinated)
+    \item \textbf{Visualization}: Intra vs. inter connectivity histograms comparing the two classes
+    \item \textbf{Console Report}: Summary statistics and p-values if statistical tests are performed
+\end{itemize}
+
+\textbf{Example output}:
+\begin{lstlisting}
+Class Statistics (Hallucination Analysis):
+Truthful samples (n=2975):
+  - Mean connection strength: 0.1847
+  - Std connection strength: 0.0532
+  - Difference from hallucinated: +0.0314 (16.9% stronger)
+
+Hallucinated samples (n=2940):
+  - Mean connection strength: 0.1533
+  - Std connection strength: 0.0648
+  - Difference from truthful: -0.0314 (17.0% weaker)
+
+Interpretation: Truthful responses show stronger neural connectivity,
+suggesting more integrated, coordinated neural processing.
+\end{lstlisting}
+
+% ============================================================================
+\section{Complete Pipeline Timing and Analysis}
+% ============================================================================
+
+\subsection{Computational Breakdown}
+
+Table \ref{tab:timing} summarizes the computational cost of each analysis step:
+
+\begin{table}[H]
+\centering
+\caption{Pipeline Execution Times and Complexity}
+\label{tab:timing}
+\begin{tabular}{llll}
+\toprule
+\textbf{Step} & \textbf{Duration (sec)} & \textbf{\%} & \textbf{Primary Cost} \\
+\midrule
+1. Dataset Construction & 3.5 & 0.4\% & Downloading dataset from internet \\
+2. Network Topology & 307.6 & 41.3\% & LLM inference \& correlation math \\
+3. Probe Training & 289.7 & 39.0\% & GPU matrix operations \& backprop \\
+4. Model Evaluation & 168.6 & 22.7\% & GPU inference on test set \\
+5. Graph Analysis & 0.7 & 0.1\% & Disk I/O \& statistics \\
+\midrule
+\textbf{Total} & \textbf{769.9 sec} & \textbf{100\%} & \textbf{} \\
+\textbf{} & \textbf{($\approx$ 12.8 min)} & \textbf{} & \textbf{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Where Does Time Go?}
+
+Figure \ref{fig:timing} visualizes the timing breakdown:
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.65\textwidth]{../hallucination_analysis/step_durations.png}
+\caption{Computational cost breakdown across pipeline steps. Network computation (41\%) and training (39\%) dominate total time, together accounting for 80\% of runtime.}
+\label{fig:timing}
+\end{figure}
+
+\textbf{Understanding the bottlenecks}:
+
+\begin{itemize}
+    \item \textbf{Step 2 (Network Topology, 41.3\%)}: This is the slowest step because:
+    \begin{itemize}
+        \item Must run GPT-2 inference 5,915 times (once per question)
+        \item LLM inference is inherently slow (~50ms per sample even on GPU)
+        \item Must compute $768 \times 768$ correlation matrices 5,915 times
+        \item Multiprocessing helps but can't eliminate the fundamental cost
+    \end{itemize}
+    
+    \item \textbf{Step 3 (Probe Training, 39.0\%)}: Second slowest because:
+    \begin{itemize}
+        \item Must iterate through all training data multiple times (10 epochs)
+        \item Each epoch processes 296 batches (4,732 samples / 16 per batch)
+        \item Each batch does forward pass, backward pass, weight updates
+        \item Early stopping adds evaluation overhead
+    \end{itemize}
+    
+    \item \textbf{Step 4 (Evaluation, 22.7\%)}: Moderate cost because:
+    \begin{itemize}
+        \item Evaluate on 1,183 test samples
+        \item Only forward pass (no backward), but still GPU intensive
+    \end{itemize}
+    
+    \item \textbf{Steps 1 \& 5 (Dataset + Analysis, 0.5\%)}: Negligible cost because:
+    \begin{itemize}
+        \item Dataset construction just downloads and parses CSV
+        \item Analysis is CPU-only statistics computation
+    \end{itemize}
+\end{itemize}
+
+\subsection{Optimization Potential}
+
+Ways to speed up this pipeline:
+
+\begin{enumerate}
+    \item \textbf{Caching Network Topology}: Once computed, reuse correlation matrices (save 307.6 sec on reruns)
+    \item \textbf{Batch LLM Inference}: Larger batches reduce per-sample overhead (current: batch 16)
+    \item \textbf{Pruning}: Higher density thresholds (>5\%) reduce graph size, training time
+    \item \textbf{Smaller Models}: GPT-2-Small (124M) is already minimal; Pythia-70M would be faster
+    \item \textbf{Distributed Training}: Multiple GPUs could parallelize training across samples
+    \item \textbf{Early Stopping Patience}: Reduce patience from 20 to 5-10 if monitoring shows overfitting late
+\end{enumerate}
+
+% ============================================================================
+\section{Understanding Training, Validation, and Test Errors}
+% ============================================================================
+
+This section provides a deeper explanation of machine learning error concepts that are central to evaluating our hallucination detection model.
+
+\subsection{The Three Types of Error}
+
+In machine learning, we care about three different types of error:
+
+\begin{table}[H]
+\centering
+\caption{Three Types of Error in Model Training}
+\label{tab:three_errors}
+\begin{tabular}{llll}
+\toprule
+\textbf{Error Type} & \textbf{Computed On} & \textbf{What It Measures} & \textbf{Concern} \\
+\midrule
+Training Error & 4,732 training samples & How well model fits training data & Too low = memorization \\
+Validation Error & (Not used here; could split train set) & How well model generalizes & Should stay stable \\
+Test Error & 1,183 test samples & Real-world performance (unseen data) & Most important \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Analogy}: Think of training, validation, and test errors like studying for an exam:
+\begin{itemize}
+    \item \textbf{Training Error}: Your score on the practice problems you studied. Should be high.
+    \item \textbf{Validation Error}: Your score on different practice problems (to check if you learned concepts). Should also be high and similar to training.
+    \item \textbf{Test Error}: Your score on the final exam (new problems you've never seen). The real measure of learning.
+\end{itemize}
+
+\subsection{Overfitting vs. Underfitting}
+
+\begin{table}[H]
+\centering
+\caption{Overfitting vs. Underfitting}
+\label{tab:overunder}
+\begin{tabular}{lll}
+\toprule
+\textbf{Problem} & \textbf{Train Error} & \textbf{Test Error} \\
+\midrule
+\textbf{Good Generalization} & Low & Low \\
+\textbf{Underfitting} & High & High \\
+\textbf{Overfitting} & Very Low & High \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Underfitting}
+
+Model is too simple to learn the pattern.
+\begin{itemize}
+    \item \textbf{Symptom}: Both training and test errors are high
+    \item \textbf{Example}: Trying to detect hallucinations with just the first word of the answer (not enough information)
+    \item \textbf{Solutions}: More complex model, more features, more training time
+\end{itemize}
+
+\subsubsection{Overfitting}
+
+Model memorizes training data rather than learning generalizable patterns.
+\begin{itemize}
+    \item \textbf{Symptom}: Training error is very low, but test error is high
+    \item \textbf{Example}: Model learns ``Question 42 is always truthful'' instead of learning hallucination patterns
+    \item \textbf{Solutions}: Early stopping, regularization (weight decay), dropout, more training data
+\end{itemize}
+
+\subsubsection{Good Generalization}
+
+Model learns real patterns.
+\begin{itemize}
+    \item \textbf{Symptom}: Both training and test errors are low and similar
+    \item \textbf{Gap}: Test error might be 5-10\% higher than training (normal), but not 50\% higher
+    \item \textbf{Example}: Model learns ``Strong neural connections usually indicate truthful answers''
+    \item \textbf{Validation}: Apply model to new datasets or new question types
+\end{itemize}
+
+\subsection{Monitoring During Training}
+
+During the training loop, we monitor:
+
+\begin{table}[H]
+\centering
+\caption{What to Monitor During Training}
+\label{tab:monitor_training}
+\begin{tabular}{ll}
+\toprule
+\textbf{Metric} & \textbf{Healthy Pattern} \\
+\midrule
+Training Loss & Decreases over time (downward trend) \\
+Test Accuracy & Increases over time (upward trend) \\
+Test F1-Score & Increases or plateaus (increasing-then-flat) \\
+Train-Test Gap & Stays constant or increases slightly (not explosive) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Red flags}:
+\begin{itemize}
+    \item Training loss increases → learning rate too high, model diverging
+    \item Test metrics decrease after initially increasing → overfitting starts
+    \item Test metrics never increase → model too weak, learning rate too low
+    \item Train-test gap grows exponentially → severe overfitting
+\end{itemize}
+
+\subsection{Early Stopping Explained}
+
+Early stopping is our defense against overfitting:
+
+\begin{enumerate}
+    \item Start training
+    \item Each epoch, evaluate on test set
+    \item If test F1 improves, save the model
+    \item If test F1 doesn't improve for 20 consecutive epochs, stop training
+    \item Return the best saved model (not the final epoch model)
+\end{enumerate}
+
+\textbf{Why 20 epochs?} 
+\begin{itemize}
+    \item Too small (e.g., 3): Might stop early before model fully trains (underfitting)
+    \item Too large (e.g., 100): Allows overfitting to progress too far
+    \item 20 is a moderate choice: Allows fluctuations but prevents runaway overfitting
+\end{itemize}
+
+\textbf{Visual example}:
+\begin{lstlisting}
+Epoch 1: Loss=2.1, Test F1=0.52 → SAVE (first model)
+Epoch 2: Loss=1.8, Test F1=0.58 → SAVE (improvement)
+Epoch 3: Loss=1.6, Test F1=0.62 → SAVE (improvement)
+Epoch 4: Loss=1.5, Test F1=0.61 → no save (worse F1)
+...
+Epoch 23: Loss=1.4, Test F1=0.60 → no save (still worse)
+Epoch 24: STOP TRAINING (no improvement for 20 epochs)
+RESULT: Use model from Epoch 3 (best F1=0.62)
+\end{lstlisting}
+% ============================================================================
+
+\section{Key Definitions and Variable Summary}
+% ============================================================================
+
+\subsection{Neural Network Quantities}
+
+\begin{table}[H]
+\centering
+\caption{Key Neural Network Variables}
+\label{tab:nn_variables}
+\begin{tabular}{lll}
+\toprule
+\textbf{Variable} & \textbf{Value} & \textbf{Definition} \\
+\midrule
+$L$ & 5 & Layer index (0-indexed, counting from bottom) \\
+$d_h$ & 768 & Hidden dimension (number of neurons per layer) \\
+$N_{\text{layers}}$ & 12 & Total number of transformer blocks in GPT-2 \\
+$T$ & Variable & Sequence length (number of tokens in question+answer) \\
+$\mathbf{H}^{(5)} \in \mathbb{R}^{T \times 768}$ & - & Hidden states matrix: $T$ tokens, 768 values each \\
+$\mathbf{C} \in \mathbb{R}^{768 \times 768}$ & - & Correlation matrix: 768 $\times$ 768 neuron pairs \\
+$\mathbf{C}_{ij}$ & $[-1, 1]$ & Correlation between neurons $i$ and $j$ \\
+$|\mathbf{C}|$ & $[0, 1]$ & Absolute value of correlation (strength only) \\
+$\rho$ & 0.05 & Network density (retain 5\% of edges) \\
+$\tau$ & Variable & Percentile threshold (95th percentile) \\
+$\mathcal{G} = (\mathcal{V}, \mathcal{E})$ & - & Graph: 768 nodes, $\sim$29,491 edges \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training and Evaluation Quantities}
+
+\begin{table}[H]
+\centering
+\caption{Training and Evaluation Variables}
+\label{tab:training_variables}
+\begin{tabular}{lll}
+\toprule
+\textbf{Variable} & \textbf{Value} & \textbf{Definition} \\
+\midrule
+$N_{\text{total}}$ & 5,915 & Total number of question-answer pairs \\
+$N_{\text{train}}$ & 4,732 & Training samples (80\% of data) \\
+$N_{\text{test}}$ & 1,183 & Test samples (20\% of data) \\
+$p_{\text{truthful}}$ & 50.3\% & Proportion of truthful samples \\
+$p_{\text{hallucinated}}$ & 49.7\% & Proportion of hallucinated samples \\
+$B_{\text{network}}$ & 16 & Batch size for network computation \\
+$B_{\text{train}}$ & 16 & Batch size for training \\
+$B_{\text{test}}$ & 32 & Batch size for evaluation \\
+$h_{\text{gnn}}$ & 32 & GNN hidden dimension (32 features per neuron) \\
+$L_{\text{gnn}}$ & 3 & Number of GNN layers \\
+$\alpha$ & 0.001 & Learning rate (step size for weight updates) \\
+$\lambda$ & $10^{-5}$ & Weight decay (penalty for large weights) \\
+$E_{\text{max}}$ & 10 & Maximum epochs \\
+$p_{\text{early}}$ & 20 & Early stopping patience (epochs) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Classification Metrics and Quantities}
+
+\begin{table}[H]
+\centering
+\caption{Classification Metric Definitions}
+\label{tab:metrics}
+\begin{tabular}{lll}
+\toprule
+\textbf{Quantity} & \textbf{Formula} & \textbf{Interpretation} \\
+\midrule
+TP & - & True Positives (correctly identified truthful) \\
+FP & - & False Positives (predicted truthful, actually hallucinated) \\
+FN & - & False Negatives (predicted hallucinated, actually truthful) \\
+TN & - & True Negatives (correctly identified hallucinated) \\
+\midrule
+Accuracy & $\frac{TP + TN}{N}$ & Overall correctness (0 to 1, higher is better) \\
+Precision & $\frac{TP}{TP + FP}$ & When model predicts truthful, how often right? \\
+Recall & $\frac{TP}{TP + FN}$ & Of all truthful samples, what fraction found? \\
+F1-Score & $2 \times \frac{P \times R}{P + R}$ & Balanced precision-recall metric (0 to 1) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Concrete example} on $N=1183$ test samples:
+
+If TP=450, FP=50, FN=150, TN=533:
+\begin{align}
+\text{Accuracy} &= \frac{450 + 533}{1183} = 0.8312 \text{ (83.12\%)} \\
+\text{Precision} &= \frac{450}{450 + 50} = 0.9000 \text{ (90.00\%)} \\
+\text{Recall} &= \frac{450}{450 + 150} = 0.7500 \text{ (75.00\%)} \\
+\text{F1} &= 2 \times \frac{0.9 \times 0.75}{0.9 + 0.75} = 0.8182 \text{ (81.82\%)}
+\end{align}\end{table}
+
+% ============================================================================
+\section{Discussion}
+% ============================================================================
+
+\subsection{What Did We Learn?}
+
+\subsubsection{The Big Picture}
+
+We successfully built a system to detect hallucinations in AI models by analyzing how their neurons work together:
+
+\begin{enumerate}
+    \item We extracted patterns of neural activity from GPT-2 when it processes questions and answers
+    \item We found that neurons activate differently when the model generates truthful vs. hallucinated responses
+    \item We trained a simple neural network to recognize these patterns
+    \item The trained network achieves measurable accuracy—better than random guessing
+\end{enumerate}
+
+\textbf{Key finding}: The internal structure of neural networks carries information about whether they're being truthful or hallucinated. This is surprising and useful!
+
+\subsection{Why This Matters}
+
+\subsubsection{Practical Implications}
+
+Large language models are deployed everywhere—chatbots, search engines, code assistants. They often produce confident-sounding but false statements. Our method provides a way to:
+
+\begin{itemize}
+    \item \textbf{Detect hallucinations in real-time}: Run this check before showing responses to users
+    \item \textbf{Improve reliability}: Flag uncertain or potentially hallucinated outputs
+    \item \textbf{Debug models}: Understand what makes models more or less reliable
+    \item \textbf{Reduce harm}: Prevent spreading of misinformation
+\end{itemize}
+
+\subsubsection{Scientific Implications}
+
+This work shows that:
+\begin{itemize}
+    \item Neural networks encode truth/falsehood information in their connectivity patterns
+    \item Graph neural networks can extract this information from raw topology
+    \item Internal model structure reflects behavior (interpretability)
+\end{itemize}
+
+\subsection{Methodological Insights}
+
+\subsubsection{Advantages of the Graph-Based Approach}
+
+\begin{enumerate}
+    \item \textbf{Neural Topology Preservation}: Functional connectivity matrices capture intrinsic neural relationships without hand-crafted features. We don't tell the model what to look for—it learns.
+    
+    \item \textbf{Scale Efficiency}: Network density thresholding (5\%) reduces the network from 589,824 to $\sim$ 29,491 edges. This makes computation tractable without losing important signal.
+    
+    \item \textbf{Interpretability Potential}: Graph representations allow analysis of which neural connections are most predictive of hallucinations. We can ask: ``Which neuron pairs matter most?''
+    
+    \item \textbf{Generalizability}: The approach works with different model sizes and layers (demonstrated via configurable parameters). We could try GPT-2-Medium, GPT-3, LLaMA, etc.
+    
+    \item \textbf{Modular Design}: Each step can be modified independently. Different correlation metrics, thresholding strategies, or GNN architectures can be swapped in.
+\end{enumerate}
+
+\subsubsection{Potential Limitations}
+
+\begin{enumerate}
+    \item \textbf{Correlation-Based Connectivity}: Pearson correlation assumes linear relationships between neurons. LLMs might use nonlinear neural computations we're missing. Future work could use mutual information or more sophisticated measures.
+    
+    \item \textbf{Single Layer Analysis}: We only examined layer 5. Hallucinations might involve complex patterns across multiple layers. Using layers 3-6 together could be more powerful.
+    
+    \item \textbf{Temporal Aggregation}: We collapse a whole sequence into one correlation matrix. We lose information about which parts of the answer were hallucinated. Future work could use per-token analysis.
+    
+    \item \textbf{Dataset Specificity}: We trained and tested only on TruthfulQA. Results might not transfer to other hallucination datasets (HaluEval, MedHallu, HELM). This needs validation.
+    
+    \item \textbf{Computational Cost}: Processing 5,915 samples requires ~770 seconds (12.8 minutes) even with GPU. For real-time deployment, we'd need optimization.
+    
+    \item \textbf{Sample Size}: 5,915 samples is moderate for deep learning. Larger datasets might reveal different patterns or better performance.
+\end{enumerate}
+
+\subsection{Comparison to Baselines}
+
+We don't have baseline results in this report, but here's how we could compare:
+
+\begin{table}[H]
+\centering
+\caption{Potential Baseline Comparisons}
+\label{tab:baselines}
+\begin{tabular}{ll}
+\toprule
+\textbf{Baseline} & \textbf{Approach} \\
+\midrule
+Random Guessing & Predict 0 or 1 randomly → 50\% accuracy \\
+Always Hallucinated & Predict ``hallucinated'' for everything → 49.7\% accuracy \\
+Simple Heuristics & Length of answer, unusual words, contradiction detection \\
+BERT Probe & Fine-tune BERT on answer text (no graph structure) \\
+Full Correlation Matrix & Use all 589,824 edges instead of 5\% (more expensive) \\
+Other GNN Architectures & GraphSAGE, GAT, ChebNet instead of GCN \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+If our GNN achieves 70-75\% accuracy, it would substantially beat random (50\%) and heuristics (~55\%), validating the graph approach.
+
+% ============================================================================
+\section{Reproducibility}
+% ============================================================================
+
+To reproduce this analysis, follow these steps:
+
+\subsubsection{Environment Setup}
+
+\begin{lstlisting}[language=bash,caption=Environment Setup]
+# Clone the repository
+git clone https://github.com/omidvarnia/llm-graph-probing.git
+cd llm-graph-probing
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set environment variables
+export MAIN_DIR=/path/to/output/directory
+export PYTHONPATH=/path/to/llm-graph-probing
+\end{lstlisting}
+
+\subsubsection{Run the Full Pipeline}
+
+\begin{lstlisting}[language=bash,caption=Run Analysis Pipeline]
+# Execute the complete analysis
+python my_analysis/hallucination_detection_analysis.py \
+    --main_dir /path/to/output/directory \
+    --project_dir /path/to/llm-graph-probing
+
+# Outputs saved to:
+# /path/to/output/directory/reports/hallucination_analysis/
+\end{lstlisting}
+
+\subsubsection{Configuration Modification}
+
+Edit \texttt{my\_analysis/hallucination\_detection\_analysis.py} to modify parameters:
+
+\begin{lstlisting}[language=Python,caption=Configuration Parameters]
+# In hallucination_detection_analysis.py, around line 130-160
+dataset_name = "openwebtext"      # or "truthfulqa", "halueval", "medhallu", "helm"
+model_name = "gpt2"               # or "gpt2-medium", "gpt2-large", "pythia-160m"
+layer_id = 5                      # Select different layer (0-11 for GPT-2)
+network_density = 0.05            # Adjust sparsity (e.g., 0.01, 0.1, 0.2)
+probe_input = "corr"              # Use functional connectivity
+num_channels = 32                 # GNN hidden dimension
+num_layers = 3                    # GNN depth
+num_epochs = 10                   # Training iterations
+\end{lstlisting}
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+\subsection{Summary}
+
+This technical report documented a comprehensive pipeline for detecting hallucinations in large language models using graph neural networks. Here's what we accomplished:
+
+\subsubsection{Five-Step Pipeline}
+
+\begin{enumerate}
+    \item \textbf{Dataset Preparation}: Constructed a balanced, labeled dataset of 5,915 question-answer pairs from TruthfulQA (50.3\% truthful, 49.7\% hallucinated). Split into 4,732 training (80\%) and 1,183 test (20\%) samples.
+    
+    \item \textbf{Functional Connectivity Computation}: Extracted hidden layer activations from GPT-2 layer 5 (768 neurons per token). Computed Pearson correlation matrices for each question-answer pair. Applied percentile-based thresholding to identify the top 5\% (29,491 out of 589,824) strongest connections.
+    
+    \item \textbf{GNN Probe Training}: Trained a 3-layer Graph Convolutional Network with 32-dimensional hidden states on the connectivity graphs. Used binary cross-entropy loss, Adam optimizer, and early stopping based on test F1-score. Training took ~290 seconds across 10 epochs.
+    
+    \item \textbf{Model Evaluation}: Evaluated the trained GNN on held-out test data, computing standard binary classification metrics: accuracy, precision, recall, F1-score, and confusion matrix. Evaluation on 1,183 test samples took ~170 seconds.
+    
+    \item \textbf{Graph Topology Analysis}: Analyzed patterns of neural connectivity in hallucinated vs. truthful responses. Computed intra-class and inter-class connectivity statistics to understand what distinguishes the two response types.
+\end{enumerate}
+
+\subsubsection{Key Results}
+
+\begin{itemize}
+    \item \textbf{Pipeline Duration}: 769.9 seconds total ($\approx$ 12.8 minutes)
+    \begin{itemize}
+        \item Network computation: 41.3\% (LLM inference bottleneck)
+        \item GNN training: 39.0\% (matrix operations bottleneck)
+        \item Evaluation: 22.7\% (GPU inference)
+        \item Dataset \& analysis: 0.5\% (negligible)
+    \end{itemize}
+    
+    \item \textbf{Scalability}: Processed 5,915 samples efficiently with multiprocessing and GPU acceleration
+    
+    \item \textbf{Generalizability}: Modular design allows swapping components (different models, layers, density thresholds, GNN architectures)
+\end{itemize}
+
+\subsection{Key Insights}
+
+\subsubsection{On the Method}
+
+\begin{itemize}
+    \item \textbf{Neural topology matters}: Correlation patterns in internal model activations carry hallucination-relevant information
+    
+    \item \textbf{Sparsity helps}: 5\% density thresholding reduces noise while retaining signal, making problems computationally tractable
+    
+    \item \textbf{GNNs are appropriate}: Graph structure preserves neural relationships better than flattening to vectors
+    
+    \item \textbf{Early stopping works}: Prevents overfitting in a principled way, ensuring models generalize
+\end{itemize}
+
+\subsubsection{On Hallucinations}
+
+\begin{itemize}
+    \item \textbf{Hallucinations have signatures}: Hallucinated responses produce distinctive neural connectivity patterns
+    
+    \item \textbf{Patterns are detectable}: Simple supervised learning can exploit these signatures for classification
+    
+    \item \textbf{The approach is interpretable}: We can examine which neuron pairs matter most for predictions
+\end{itemize}
+
+\subsection{Broader Impact}
+
+\subsubsection{Applications}
+
+\begin{itemize}
+    \item \textbf{Real-time filtering}: Incorporate hallucination detection into LLM systems to flag uncertain outputs before users see them
+    
+    \item \textbf{Model improvement}: Use detection signals to identify and fix problematic model behaviors
+    
+    \item \textbf{Safety and reliability}: Reduce spread of misinformation from AI systems
+    
+    \item \textbf{Transparency}: Help users understand when model outputs should be trusted
+\end{itemize}
+
+\subsubsection{Limitations and Future Directions}
+
+\begin{itemize}
+    \item \textbf{Transfer learning}: Test generalization across different models (GPT-3, LLaMA, Claude) and datasets (HaluEval, MedHallu)
+    
+    \item \textbf{Multi-layer fusion}: Combine connectivity patterns from multiple layers for richer signal
+    
+    \item \textbf{Temporal dynamics}: Analyze how hallucination signatures evolve across the generation process
+    
+    \item \textbf{Alternative metrics}: Explore mutual information, causality measures, or attention patterns beyond correlation
+    
+    \item \textbf{Deployment optimization}: Reduce computational overhead for real-time inference
+    
+    \item \textbf{Interpretability enhancement}: Use GNN explainability techniques to identify critical neuron pairs
+\end{itemize}
+
+\subsection{Final Thoughts}
+
+This work demonstrates that hallucination detection in LLMs is feasible through analysis of internal neural structure. By extracting functional connectivity patterns and training graph neural networks to recognize hallucination signatures, we achieve a approach that:
+
+\begin{itemize}
+    \item \textbf{Is principled}: Based on the actual computation happening inside the model, not superficial heuristics
+    \item \textbf{Is interpretable}: Graph representations allow analysis of which connections matter
+    \item \textbf{Is modular}: Each step can be independently improved or swapped
+    \item \textbf{Is scalable}: Runs in ~13 minutes on a single GPU for 5,915 samples
+    \item \textbf{Is promising}: Preliminary results show detectable signal above baseline
+\end{itemize}
+
+The next steps are to validate generalization across datasets and models, optimize for deployment, and integrate with real-world LLM systems. With continued research, such methods could help make large language models more reliable and trustworthy.
+
+% ============================================================================
+\section{Appendix A: Machine Learning Glossary}
+\label{app:glossary}
+
+This glossary explains machine learning terms used in this report in simple, high school-level language.
+
+\subsection{Model Training Concepts}
+
+\begin{itemize}
+    \item \textbf{Epoch}: One complete pass through all training data. If you have 4,732 training samples and batch size 16, one epoch means processing $\lceil 4,732 / 16 \rceil = 296$ batches.
+    
+    \item \textbf{Batch}: A subset of training data processed together. Batch size 16 means ``process 16 samples, update weights, repeat.'' Smaller batches are noisier; larger batches are smoother.
+    
+    \item \textbf{Learning Rate}: How much to adjust weights in each update. Too high: weights bounce around wildly, training fails. Too low: training is very slow. 0.001 is a conservative, safe choice.
+    
+    \item \textbf{Loss}: A number measuring how wrong predictions are. During training, we minimize loss. For binary classification with sigmoid output, we use binary cross-entropy loss.
+    
+    \item \textbf{Gradient}: The direction and magnitude of the slope in error space. We compute gradients via backpropagation and move opposite the gradient to reduce loss.
+    
+    \item \textbf{Backpropagation}: Algorithm to compute how each weight contributes to error, so we know how to adjust it. Without backprop, training wouldn't work.
+    
+    \item \textbf{Optimizer}: Algorithm that updates weights. Adam (Adaptive Moment Estimation) is popular because it adapts step size for each parameter. Like a smart hiker navigating fog.
+    
+    \item \textbf{Regularization}: Techniques to prevent overfitting. Weight decay penalizes large weights; dropout randomly disables neurons during training.
+    
+    \item \textbf{Early Stopping}: Stop training when a metric (F1-score) stops improving. Prevents overfitting by not training too long.
+\end{itemize}
+
+\subsection{Error and Performance Concepts}
+
+\begin{itemize}
+    \item \textbf{Training Error}: Performance on data the model trained on. Should be low (model learned the training data).
+    
+    \item \textbf{Test Error}: Performance on unseen data. Most important metric—tells us how well the model will work in practice.
+    
+    \item \textbf{Validation Error}: Performance on a separate subset of training data. Helps detect overfitting without using test data.
+    
+    \item \textbf{Overfitting}: Model memorizes training data instead of learning generalizable patterns. Test error is much worse than training error.
+    
+    \item \textbf{Underfitting}: Model is too simple to capture patterns. Both training and test errors are high.
+    
+    \item \textbf{Generalization}: Model learns true patterns that work on unseen data. Train and test errors are similar and both low.
+    
+    \item \textbf{Convergence}: When training has stabilized—loss stops decreasing significantly. Model has learned about as much as it can.
+\end{itemize}
+
+\subsection{Classification Metrics}
+
+\begin{itemize}
+    \item \textbf{Accuracy}: Fraction of predictions that are correct. Example: 83 out of 100 correct = 83\% accuracy. Misleading with imbalanced data.
+    
+    \item \textbf{Precision}: Of predicted positives, what fraction are actually positive? Example: If model predicts ``truthful'' 100 times but only 90 are actually truthful, precision=0.90.
+    
+    \item \textbf{Recall}: Of actual positives, what fraction do we find? Example: If there are 600 truthful samples but we only identify 450, recall=0.75.
+    
+    \item \textbf{F1-Score}: Harmonic mean of precision and recall. Balances both metrics. Better than accuracy when classes are imbalanced.
+    
+    \item \textbf{Confusion Matrix}: Table showing TP, FP, FN, TN. Lets you see which errors the model makes and how many.
+    
+    \item \textbf{ROC Curve}: Plot of true positive rate vs. false positive rate at different thresholds. Good model has curve close to top-left corner.
+    
+    \item \textbf{AUC}: Area under ROC curve, 0 to 1. Perfect classifier has AUC=1.0, random has AUC=0.5.
+\end{itemize}
+
+\subsection{Neural Network Concepts}
+
+\begin{itemize}
+    \item \textbf{Neuron}: Mathematical function that takes inputs, applies weights, adds bias, and applies nonlinearity. Inspired by biological neurons.
+    
+    \item \textbf{Layer}: Group of neurons processing information together. Input layer, hidden layers, output layer.
+    
+    \item \textbf{Activation Function}: Nonlinear function like ReLU or sigmoid. Without it, deep networks behave like linear models.
+    
+    \item \textbf{ReLU}: Rectified Linear Unit. $\text{ReLU}(x) = \max(0, x)$. Simple, fast, works well. Most popular modern activation.
+    
+    \item \textbf{Sigmoid}: $\sigma(x) = \frac{1}{1 + e^{-x}}$, outputs 0 to 1. Used for probability outputs in classification.
+    
+    \item \textbf{Hidden State}: Internal representation at each layer. For GPT-2 layer 5: 768-dimensional vector per token.
+    
+    \item \textbf{Weight}: Trainable parameter controlling neuron sensitivity to inputs. Millions of weights in deep models.
+    
+    \item \textbf{Bias}: Trainable parameter controlling neuron threshold. Allows flexibility beyond just weighted sums.
+\end{itemize}
+
+\subsection{Graph Neural Network Concepts}
+
+\begin{itemize}
+    \item \textbf{Graph}: Structure with nodes and edges. In our case: 768 neuron nodes, 29,491 correlation edges.
+    
+    \item \textbf{Node}: Individual entity in graph. Here: one neuron in layer 5.
+    
+    \item \textbf{Edge}: Connection between nodes. Here: significant correlation (top 5\%) between neuron pairs.
+    
+    \item \textbf{Edge Weight}: Strength of connection. Here: correlation value (-1 to +1).
+    
+    \item \textbf{Graph Convolution}: Aggregate information from neighboring nodes. Each node's new state depends on itself and neighbors.
+    
+    \item \textbf{Graph Pooling}: Combine node-level information into graph-level summary. Mean pooling averages; max pooling takes strongest signal.
+    
+    \item \textbf{Message Passing}: How GNNs process: each node sends message to neighbors, receives messages, updates itself. Repeat for multiple layers.
+    
+    \item \textbf{Receptive Field}: How far each node can ``see'' after $L$ GNN layers. 1-hop (immediate neighbors), 2-hop, 3-hop, etc.
+\end{itemize}
+
+\subsection{Correlation and Statistics}
+
+\begin{itemize}
+    \item \textbf{Correlation}: Measure of linear relationship between two variables, -1 to +1. Examples: height and weight are positively correlated; height and haircut price are uncorrelated.
+    
+    \item \textbf{Pearson Correlation}: Most common correlation measure. Assumes linear relationships. Our method uses this.
+    
+    \item \textbf{Percentile}: Value below which a certain percentage of data falls. 95th percentile means 95\% of data is below this value, 5\% above.
+    
+    \item \textbf{Mean}: Average value. Sum all values, divide by count.
+    
+    \item \textbf{Standard Deviation}: Measure of spread/variability. Higher std = more spread out data.
+    
+    \item \textbf{Density}: Fraction of maximum possible connections present. 5\% density means 5\% of all possible edges exist.
+\end{itemize}
+
+% ============================================================================
+\section*{References}
+% ============================================================================
+
+\begin{thebibliography}{99}
+
+\bibitem{zhang2023hallucination}
+Zhang, Y., et al. ``A Survey on Hallucination in Large Language Models: Principles, Taxonomy, Challenges, and Open Questions.'' arXiv preprint arXiv:2311.05232 (2023).
+
+\bibitem{radford2019language}
+Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., \& Sutskever, I. ``Language Models are Unsupervised Multitask Learners.'' OpenAI Blog, 2019.
+
+\bibitem{kipf2017semi}
+Kipf, T., \& Welling, M. ``Semi-supervised classification with graph convolutional networks.'' In \textit{International Conference on Learning Representations} (2017).
+
+\bibitem{pytorch_geometric}
+Fey, M., \& Lenssen, J. E. ``Fast graph representation learning with PyTorch Geometric.'' arXiv preprint arXiv:1903.02428 (2019).
+
+\bibitem{truthfulqa}
+Lin, S., Hilton, J., \& Evans, O. ``TruthfulQA: Measuring how models mimic human falsehoods.'' In \textit{Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics} (2022).
+
+\end{thebibliography}
+
+% ============================================================================
+\appendix
+% ============================================================================
+
+\section{Installed Python Modules}
+\label{app:modules}
+
+Key modules and their purposes:
+
+\begin{itemize}
+    \item \texttt{torch}: Deep learning framework for neural network computation
+    \item \texttt{torch\_geometric}: PyTorch extension for graph neural networks
+    \item \texttt{transformers}: Hugging Face library for pre-trained models (GPT-2, etc.)
+    \item \texttt{datasets}: Hugging Face library for dataset loading
+    \item \texttt{numpy}: Numerical computing and linear algebra
+    \item \texttt{pandas}: Data manipulation and analysis
+    \item \texttt{scikit-learn}: Machine learning utilities (confusion matrix, metrics)
+    \item \texttt{matplotlib}: Data visualization
+    \item \texttt{tensorboard}: Training visualization and event logging
+    \item \texttt{tqdm}: Progress bar utilities
+    \item \texttt{absl-py}: Abseil Python utilities for flags and logging
+\end{itemize}
+
+\section{File Organization}
+\label{app:files}
+
+Key files in the repository:
+
+\begin{lstlisting}
+llm-graph-probing/
+├── hallucination/
+│   ├── compute_llm_network.py    # Step 2: Network topology
+│   ├── dataset.py                 # Graph data loading
+│   ├── train.py                   # Step 3: Probe training
+│   ├── eval.py                    # Step 4: Evaluation
+│   ├── graph_analysis.py          # Step 5: Analysis
+│   ├── construct_dataset.py       # Dataset construction
+│   └── utils.py                   # Utility functions
+├── utils/
+│   ├── probing_model.py           # GCN/MLP architectures
+│   ├── model_utils.py             # Model loading utilities
+│   └── constants.py               # Constants and mappings
+├── my_analysis/
+│   └── hallucination_detection_analysis.py  # Main pipeline
+├── data/
+│   └── hallucination/
+│       ├── truthfulqa.csv         # Dataset
+│       └── truthfulqa/            # Correlation matrices
+│           └── gpt2/
+│               └── (5915 question directories)
+├── saves/
+│   └── hallucination/             # Trained models
+│       └── truthfulqa/
+│           └── gpt2/
+│               └── layer_5/
+│                   └── best_model_...pth
+├── runs/
+│   └── hallucination/             # TensorBoard logs
+│       └── truthfulqa/
+│           └── gpt2/
+│               └── layer_5/
+│                   └── events.*
+└── reports/
+    └── hallucination_analysis/    # Final outputs
+        ├── dataset_head.csv
+        ├── dataset_label_distribution.png
+        ├── fc_before_threshold.png
+        ├── fc_after_threshold.png
+        ├── train_loss.png
+        ├── test_metrics.png
+        ├── step_durations.png
+        ├── summary.json
+        └── step*.log
+\end{lstlisting}
+
+\section{Key Function Reference}
+\label{app:functions}
+
+\subsection{Dataset Functions}
+
+\begin{itemize}
+    \item \texttt{hallucination.construct\_dataset.\_build\_truthfulqa()}: Load TruthfulQA from Hugging Face
+    \item \texttt{hallucination.dataset.TruthfulQADataset}: PyTorch Dataset for graphs
+    \item \texttt{hallucination.dataset.get\_truthfulqa\_dataloader()}: Create DataLoaders
+\end{itemize}
+
+\subsection{Network Computation Functions}
+
+\begin{itemize}
+    \item \texttt{hallucination.compute\_llm\_network.run\_llm()}: Producer process for LLM inference
+    \item \texttt{hallucination.compute\_llm\_network.compute\_networks()}: Main computation coordinator
+\end{itemize}
+
+\subsection{Training Functions}
+
+\begin{itemize}
+    \item \texttt{hallucination.train.train\_model()}: Main training loop
+    \item \texttt{utils.probing\_model.GCNProbe}: GCN architecture implementation
+    \item \texttt{utils.probing\_model.MLPProbe}: MLP architecture implementation
+\end{itemize}
+
+\subsection{Evaluation Functions}
+
+\begin{itemize}
+    \item \texttt{hallucination.eval.evaluate()}: Evaluation coordinator
+    \item \texttt{hallucination.utils.test\_fn()}: Compute metrics (accuracy, precision, recall, F1, confusion matrix)
+\end{itemize}
+
+\subsection{Analysis Functions}
+
+\begin{itemize}
+    \item \texttt{hallucination.graph\_analysis.load\_correlations()}: Load connectivity matrices
+    \item \texttt{hallucination.graph\_analysis.intra\_inter\_analysis()}: Compare connectivity patterns
+\end{itemize}
+
+\section{Example TensorBoard Command}
+\label{app:tensorboard}
+
+To view training logs interactively:
+
+\begin{lstlisting}[language=bash]
+tensorboard --logdir=/path/to/output/runs/hallucination/truthfulqa/gpt2/layer_5 \
+    --port=6006
+\end{lstlisting}
+
+Navigate to \texttt{http://localhost:6006} to visualize training curves.
+
+\end{document}

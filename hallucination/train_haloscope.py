@@ -42,7 +42,7 @@ def svd_embed_score(feature, label, begin_k, k_span, mean=1, svd=1, weight=0):
     best_scores_over_k = None
     best_projection_over_k = None
     best_mean_over_k = None
-    for k in tqdm(range(begin_k, k_span)):
+    for k in tqdm(range(begin_k, k_span), desc="Training Haloscope K-span"):
         scores = None
         mean_recorded = None
         if mean:
