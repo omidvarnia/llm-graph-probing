@@ -98,6 +98,20 @@ default_main_dir = '/ptmp/aomidvarnia/analysis_results/llm_graph'
 parser = argparse.ArgumentParser(description="Graph Probing Analysis")
 parser.add_argument("--main_dir", type=str, default=str(default_main_dir), help="Root directory to save data and results")
 parser.add_argument("--project_dir", type=str, default=str(default_project_dir), help="Project directory containing code")
+parser.add_argument("--dataset_name", type=str, default="truthfulqa", help="Dataset name: truthfulqa, halueval, medhallu, helm")
+parser.add_argument("--model_name", type=str, default="gpt2", help="Model name: gpt2, gpt2-medium, gpt2-large, pythia-160m, etc.")
+parser.add_argument("--ckpt_step", type=int, default=-1, help="Checkpoint step (-1 for main checkpoint)")
+parser.add_argument("--batch_size", type=int, default=16, help="Batch size for LLM inference")
+parser.add_argument("--layer_id", type=int, default=5, help="LLM layer to analyze")
+parser.add_argument("--probe_input", type=str, default="corr", help="Probe input type: corr or activation")
+parser.add_argument("--network_density", type=float, default=0.05, help="Network density (0.01 to 1.0)")
+parser.add_argument("--eval_batch_size", type=int, default=32, help="Batch size for evaluation")
+parser.add_argument("--num_channels", type=int, default=32, help="Hidden channels in GNN")
+parser.add_argument("--num_layers", type=int, default=3, help="Number of GNN layers")
+parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
+parser.add_argument("--from_sparse_data", action="store_true", default=True, help="Use sparse data representation")
+parser.add_argument("--num_epochs", type=int, default=10, help="Number of training epochs")
+parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 args, unknown = parser.parse_known_args()
 
 main_dir = Path(args.main_dir).resolve()
@@ -125,19 +139,19 @@ logging.info("Starting Graph Probing Analysis")
 # -----------------------------
 # Analysis Pipeline Configuration
 # -----------------------------
-dataset_name = "openwebtext"
-model_name = "gpt2"  # Valid options: gpt2, gpt2-medium, gpt2-large, pythia-160m, etc.
-ckpt_step = -1  # -1 for main checkpoint, or specific step number for finetuned models
-batch_size = 16
-layer_id = 5
-probe_input = "corr" # corr or activation
-network_density = 0.05
-eval_batch_size = 32
-num_channels = 32
-num_layers = 3
-learning_rate = 0.001
-from_sparse_data = True
-num_epochs = 10
+dataset_name = args.dataset_name
+model_name = args.model_name
+ckpt_step = args.ckpt_step
+batch_size = args.batch_size
+layer_id = args.layer_id
+probe_input = args.probe_input
+network_density = args.network_density
+eval_batch_size = args.eval_batch_size
+num_channels = args.num_channels
+num_layers = args.num_layers
+learning_rate = args.learning_rate
+from_sparse_data = args.from_sparse_data
+num_epochs = args.num_epochs
 
 # Output directories for interim artifacts
 reports_dir = main_dir / "reports" / "hallucination_analysis"
@@ -253,13 +267,13 @@ result = run(
         python_exe,
         "-m",
         "hallucination.compute_llm_network",
-        "--dataset_name=truthfulqa",
+        f"--dataset_name={dataset_name}",
         f"--llm_model_name={model_name}",
         f"--ckpt_step={ckpt_step}",
         f"--llm_layer={layer_id}",
         f"--batch_size={batch_size}",
         f"--network_density={network_density}",
-        "--gpu_id=0",
+        f"--gpu_id={args.gpu_id}",
     ] + (["--sparse"] if from_sparse_data else []),
     cwd=project_dir,
     env=env,
@@ -354,7 +368,7 @@ result = run(
         python_exe,
         "-m",
         "hallucination.train",
-        "--dataset_name=truthfulqa",
+        f"--dataset_name={dataset_name}",
         f"--llm_model_name={model_name}",
         f"--ckpt_step={ckpt_step}",
         f"--llm_layer={layer_id}",
@@ -366,7 +380,7 @@ result = run(
         f"--hidden_channels={num_channels}",
         f"--lr={learning_rate}",
         f"--num_epochs={num_epochs}",
-        "--gpu_id=0",
+        f"--gpu_id={args.gpu_id}",
     ] + (["--from_sparse_data"] if from_sparse_data else []),
     cwd=project_dir,
     env=env,
@@ -447,14 +461,14 @@ result = run(
         python_exe,
         "-m",
         "hallucination.eval",
-        "--dataset_name=truthfulqa",
+        f"--dataset_name={dataset_name}",
         f"--llm_model_name={model_name}",
         f"--ckpt_step={ckpt_step}",
         f"--llm_layer={layer_id}",
         f"--probe_input={probe_input}",
         f"--density={network_density}",
         f"--num_layers={num_layers}",
-        "--gpu_id=0",
+        f"--gpu_id={args.gpu_id}",
     ],
     cwd=project_dir,
     env=env,

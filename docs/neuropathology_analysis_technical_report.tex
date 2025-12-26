@@ -1,0 +1,771 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf-8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{cite}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subfigure}
+
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    postbreak=\mbox{\textcolor{red}{$\hookrightarrow$}\space},
+}
+
+\title{\LARGE \textbf{Neuropathology Simulation in Large Language Models:} \\
+\Large Testing Disease-Like Network Changes and Their Effect on Hallucination Detection}
+
+\author{Analysis Report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This technical report documents a comprehensive neuropathology simulation pipeline that extends hallucination detection in Large Language Models (LLMs) by introducing disease-like alterations to the neural network's functional connectivity. The pipeline transforms healthy (baseline) functional connectivity matrices into pathological versions that mimic brain neuropathology patterns such as increased segregation, decreased aggregation, and reduced small-worldness. We then evaluate how a probe trained on healthy connectivity responds to these artificially diseased networks, and compute graph-theoretic metrics to quantify the changes. This analysis provides insights into the robustness of hallucination detection probes and the network properties that may underlie hallucinated versus truthful reasoning in LLMs. The report details all six pipeline steps, from dataset construction through comprehensive metrics analysis, with explanations of disease patterns, transformation mechanisms, evaluation protocols, and expected outcomes.
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+\subsection{Motivation and Problem Statement}
+
+While the baseline hallucination detection pipeline successfully identifies hallucinations by analyzing functional connectivity patterns in LLMs, a fundamental question remains: \textbf{How robust is this detection system when the network structure itself is altered?} 
+
+In neuroscience, understanding disease-affected brain networks is crucial for diagnostics and treatment. Similarly, understanding how LLM hallucination detection systems respond to network perturbations can reveal:
+
+\begin{enumerate}
+    \item Which connectivity patterns are truly critical for accurate reasoning.
+    \item How probe performance degrades under pathological network conditions.
+    \item Whether artificially induced network diseases make the model more ``hallucination-prone''.
+    \item Whether probes trained on healthy networks can generalize to diseased networks.
+\end{enumerate}
+
+This neuropathology analysis simulates disease-like changes in the LLM's functional connectivity and measures the consequences.
+
+\subsection{Core Hypothesis}
+
+\textbf{Hypothesis}: If we artificially alter the LLM's functional connectivity to resemble brain neuropathology patterns (e.g., increased local segregation, decreased long-range integration, reduced small-worldness), then:
+
+\begin{enumerate}
+    \item The model's internal representations will exhibit more hallucination-like properties.
+    \item A hallucination-detection probe trained on healthy connectivity will assign higher hallucination probability to pathological graphs.
+    \item The probe's classification performance will degrade on pathological graphs.
+    \item Graph-theoretic measures will show significant shifts toward pathological patterns.
+\end{enumerate}
+
+\subsection{Pipeline Overview}
+
+The neuropathology analysis extends the baseline pipeline with three additional steps (N4–N6) after confirming the baseline healthy network analysis (N1–N3):
+
+\begin{enumerate}
+    \item \textbf{N1: Dataset Construction} (reuse from baseline)
+    \item \textbf{N2: Healthy Functional Connectivity} (reuse from baseline)
+    \item \textbf{N3: Probe Training on Healthy Graphs} (reuse from baseline)
+    \item \textbf{N4: Pathological Connectivity Generation} (NEW)
+    \item \textbf{N5: Probe Evaluation on Healthy vs Pathological} (NEW)
+    \item \textbf{N6: Graph-Theoretic Metrics Comparison} (NEW)
+\end{enumerate}
+
+% ============================================================================
+\section{Pathological Connectivity Transformations}
+% ============================================================================
+
+\subsection{Disease Patterns and Their Biological Motivation}
+
+We define three disease-like patterns inspired by neuroscientific observations of actual brain diseases. Each pattern manipulates functional connectivity to reflect specific pathological signatures.
+
+\subsubsection{1. Epilepsy-Like Pattern}
+
+\textbf{Biological motivation}: Epilepsy is characterized by abnormal synchronization and hyperexcitability. In EEG and fMRI studies, epileptic brains show increased local clustering (neurons firing together in local clusters) but reduced long-range integration.
+
+\textbf{Transformation mechanism}:
+\begin{itemize}
+    \item \textbf{Cluster neurons into local modules}: Divide the $N$ neurons into $k$ spatial clusters (e.g., $k=8$). Neurons in the same cluster represent local brain regions.
+    \item \textbf{Increase within-cluster correlations}: Multiply within-cluster correlation values by $\text{within\_scale} = 1.3$. This simulates abnormal local synchronization.
+    \item \textbf{Decrease between-cluster correlations}: Multiply between-cluster values by $\text{between\_scale} = 0.5$. This breaks long-range integration.
+    \item \textbf{Rewire edges for reduced small-worldness}: Randomly swap $\approx 15\%$ of edges to reduce clustering coefficient and alter path lengths.
+\end{itemize}
+
+\textbf{Parameters}:
+\begin{lstlisting}
+DISEASE_PATTERN="epilepsy_like"
+NUM_CLUSTERS=8
+WITHIN_SCALE=1.3
+BETWEEN_SCALE=0.5
+REWIRING_PROB=0.15
+DISTANCE_THRESHOLD=50
+\end{lstlisting}
+
+\subsubsection{2. Dementia-Like Pattern}
+
+\textbf{Biological motivation}: Dementia involves global network degradation, widespread disconnection, and loss of small-world properties. Alzheimer's disease shows reduced global connectivity and hub disruption.
+
+\textbf{Transformation mechanism}:
+\begin{itemize}
+    \item \textbf{Fewer, larger modules}: Use $k=6$ clusters (fewer, coarser modules) to simulate regional disconnection.
+    \item \textbf{Mild within-cluster increase}: $\text{within\_scale} = 1.1$ (less dramatic local enhancement).
+    \item \textbf{Aggressive between-cluster reduction}: $\text{between\_scale} = 0.4$ (more severe global disconnection).
+    \item \textbf{Extensive rewiring}: $\text{rewiring\_prob} = 0.3$ (30\% of edges rewired, creating random-like network).
+\end{itemize}
+
+\textbf{Parameters}:
+\begin{lstlisting}
+DISEASE_PATTERN="dementia_like"
+NUM_CLUSTERS=6
+WITHIN_SCALE=1.1
+BETWEEN_SCALE=0.4
+REWIRING_PROB=0.3
+DISTANCE_THRESHOLD=40
+\end{lstlisting}
+
+\subsubsection{3. Autism-Like Pattern}
+
+\textbf{Biological motivation}: Autism Spectrum Disorder is theorized to involve enhanced local connectivity (weak central coherence) but reduced long-range integration. Some studies show increased clustering but abnormal organization.
+
+\textbf{Transformation mechanism}:
+\begin{itemize}
+    \item \textbf{More, smaller modules}: Use $k=10$ clusters (finer-grained local structure).
+    \item \textbf{Strong within-cluster enhancement}: $\text{within\_scale} = 1.4$ (aggressive local over-connectivity).
+    \item \textbf{Moderate between-cluster reduction}: $\text{between\_scale} = 0.6$ (moderate disconnection).
+    \item \textbf{Moderate rewiring}: $\text{rewiring\_prob} = 0.1$ (preserve some structure).
+\end{itemize}
+
+\textbf{Parameters}:
+\begin{lstlisting}
+DISEASE_PATTERN="autism_like"
+NUM_CLUSTERS=10
+WITHIN_SCALE=1.4
+BETWEEN_SCALE=0.6
+REWIRING_PROB=0.1
+DISTANCE_THRESHOLD=60
+\end{lstlisting}
+
+\subsection{Mathematical Formulation of Transformations}
+
+Let $C_{\text{healthy}} \in \mathbb{R}^{N \times N}$ be the healthy correlation matrix (from Step 2). The transformations are applied sequentially:
+
+\subsubsection{Step 1: Clustering}
+
+Assign each neuron $i \in \{1, \ldots, N\}$ to a module $m_i \in \{1, \ldots, k\}$ using k-means clustering on neuron indices:
+$$\ell = \text{KMeans}(\text{neuron indices}, k=\text{num\_clusters}, \text{random\_state}=42)$$
+
+\subsubsection{Step 2: Increase Segregation}
+
+For each pair of neurons $(i, j)$:
+$$C_1[i,j] = \begin{cases}
+C_{\text{healthy}}[i,j] \times \text{within\_scale} & \text{if } m_i = m_j \\
+C_{\text{healthy}}[i,j] \times \text{between\_scale} & \text{otherwise}
+\end{cases}$$
+
+This strengthens local connectivity and weakens global integration.
+
+\subsubsection{Step 3: Decrease Aggregation}
+
+Optionally apply a distance threshold to further weaken long-range connections:
+$$C_2[i,j] = \begin{cases}
+C_1[i,j] \times \text{between\_scale} & \text{if } |i - j| > \text{distance\_threshold} \\
+C_1[i,j] & \text{otherwise}
+\end{cases}$$
+
+\subsubsection{Step 4: Reduce Small-Worldness}
+
+Randomly rewire edges in the thresholded adjacency to break local clustering while preserving density:
+
+\begin{enumerate}
+    \item Threshold $C_2$ at density-based percentile to create binary adjacency $A$.
+    \item Select $\lfloor |E| \times \text{rewiring\_prob} \rfloor$ edge pairs.
+    \item For each pair $(u_1, v_1)$ and $(u_2, v_2)$, attempt swap to $(u_1, v_2)$ and $(u_2, v_1)$ if not creating duplicates/self-loops.
+    \item Map resulting adjacency back to weights by copying from original or assigning small random values.
+\end{enumerate}
+
+\textbf{Result}: $C_{\text{patho}} = $ final pathological matrix with:
+- Increased segregation (within-module edges stronger)
+- Decreased aggregation (between-module edges weaker)
+- Reduced clustering coefficient (fewer triangles)
+- Altered average path length (random rewiring breaks shortcuts)
+
+\subsection{Clipping and Normalization}
+
+After all transformations:
+$$C_{\text{patho}}[i,j] = \text{clip}(C_{\text{patho}}[i,j], -1.0, 1.0)$$
+
+Set diagonal to 1.0 (self-correlations are always 1.0):
+$$C_{\text{patho}}[i,i] = 1.0 \quad \forall i$$
+
+% ============================================================================
+\section{Pipeline Implementation Details}
+% ============================================================================
+
+\subsection{Step N1-N3: Baseline Setup (Reused from Hallucination Detection)}
+
+Steps N1–N3 are identical to the baseline hallucination detection pipeline:
+
+\begin{itemize}
+    \item \textbf{N1}: Construct truthfulqa.csv dataset with balanced labels.
+    \item \textbf{N2}: Compute healthy functional connectivity using GPT-2 layer 5, save as `layer_5_corr.npy` and sparse graphs.
+    \item \textbf{N3}: Train GCN probe on healthy graphs, save best model.
+\end{itemize}
+
+No changes are made to these steps; they establish the healthy baseline.
+
+\subsection{Step N4: Pathological Connectivity Generation}
+
+\textbf{Purpose}: Transform healthy connectivity matrices into pathological versions.
+
+\textbf{Implementation}: Module `hallucination/neuropathology_connectivity.py`
+
+\textbf{Key functions}:
+
+\begin{lstlisting}
+def increase_segregation(C, labels, within_scale, between_scale):
+    """Strengthen within-cluster, weaken between-cluster correlations."""
+    C_new = C.copy()
+    same = labels[:, None] == labels[None, :]
+    C_new[same] *= within_scale
+    C_new[~same] *= between_scale
+    np.fill_diagonal(C_new, 1.0)
+    return np.clip(C_new, -1.0, 1.0)
+
+def decrease_aggregation(C, labels, scaling, distance_threshold):
+    """Reduce long-range connectivity."""
+    C_new = C.copy()
+    if distance_threshold is not None:
+        I, J = np.ogrid[:C.shape[0], :C.shape[0]]
+        mask = np.abs(I - J) > distance_threshold
+        C_new[mask] *= scaling
+    return np.clip(C_new, -1.0, 1.0)
+
+def reduce_small_worldness(C, rewiring_prob, density):
+    """Randomly rewire edges to reduce clustering."""
+    # Threshold to binary adjacency
+    # Randomly swap edges
+    # Map back to weights
+    # Return pathological matrix
+    ...
+\end{lstlisting}
+
+\textbf{Workflow}:
+
+\begin{enumerate}
+    \item Load all healthy correlation matrices: `layer_5_corr.npy` for each question.
+    \item For each question $q$:
+    \begin{enumerate}
+        \item Load $C_{\text{healthy}}^{(q)}$.
+        \item Cluster nodes: $\ell = \text{cluster\_indices}(N, \text{num\_clusters})$.
+        \item Apply transformations: $C_{\text{patho}}^{(q)} = \text{make\_pathological}(C_{\text{healthy}}^{(q)}, \text{config})$.
+        \item Save: `layer_5_corr_patho_<disease>.npy`.
+        \item Optionally save sparse: `layer_5_sparse_0.05_patho_<disease>_edge_index.npy` etc.
+    \end{enumerate}
+    \item Compute group averages: $\bar{C}_{\text{healthy}} = \frac{1}{Q} \sum_{q=1}^{Q} C_{\text{healthy}}^{(q)}$ and $\bar{C}_{\text{patho}} = \frac{1}{Q} \sum_{q=1}^{Q} C_{\text{patho}}^{(q)}$.
+    \item Save group FC matrices as `.npy` and visualize as heatmaps.
+\end{enumerate}
+
+\textbf{Output files}:
+\begin{lstlisting}
+reports/neuropathology_analysis/<disease_pattern>/
+├── n4_neuropathology_connectivity.log
+├── group_fc_healthy_layer_5.npy
+├── group_fc_healthy_layer_5.png
+├── group_fc_patho_<disease>_layer_5.npy
+└── group_fc_patho_<disease>_layer_5.png
+
+data/hallucination/truthfulqa/gpt2/<question_id>/
+├── layer_5_corr.npy                              (healthy)
+├── layer_5_corr_patho_<disease>.npy              (pathological)
+├── layer_5_sparse_0.05_patho_<disease>_edge_index.npy
+└── layer_5_sparse_0.05_patho_<disease>_edge_attr.npy
+\end{lstlisting}
+
+\subsection{Step N5: Probe Evaluation on Healthy vs Pathological}
+
+\textbf{Purpose}: Compare how the probe performs on healthy vs pathological connectivity.
+
+\textbf{Implementation}: Module `hallucination/neuropathology_eval.py`
+
+\textbf{Key insight}: The probe was trained only on healthy graphs. We now test it on:
+- Healthy test graphs (baseline performance)
+- Pathological test graphs (performance under disease)
+
+\textbf{Workflow}:
+
+\begin{enumerate}
+    \item Load best probe model (trained on healthy training graphs).
+    \item Prepare test data:
+    \begin{enumerate}
+        \item Healthy test dataset: Build graphs from `layer_5_corr.npy` for test split.
+        \item Pathological test dataset: Build graphs from `layer_5_corr_patho_<disease>.npy` for test split.
+    \end{enumerate}
+    \item For each test sample:
+    \begin{enumerate}
+        \item Run probe on healthy graph: $p_{\text{healthy}} = \text{Probe}(G_{\text{healthy}})$ (hallucination probability).
+        \item Run probe on pathological graph: $p_{\text{patho}} = \text{Probe}(G_{\text{patho}})$.
+        \item Record both probabilities.
+    \end{enumerate}
+    \item Compute metrics for both conditions:
+    \begin{enumerate}
+        \item Binary predictions: $\hat{y}_{\text{healthy}} = \mathbb{1}(p_{\text{healthy}} \geq 0.5)$, $\hat{y}_{\text{patho}} = \mathbb{1}(p_{\text{patho}} \geq 0.5)$.
+        \item Accuracy, Precision, Recall, F1 for both conditions.
+        \item ROC-AUC and PR-AUC curves.
+    \end{enumerate}
+    \item Paired statistical tests on probability differences:
+    \begin{enumerate}
+        \item Compute difference: $\Delta p = p_{\text{patho}} - p_{\text{healthy}}$.
+        \item Paired t-test: $t = \frac{\bar{\Delta p}}{s_{\Delta p} / \sqrt{n}}$.
+        \item Wilcoxon signed-rank test (non-parametric alternative).
+    \end{enumerate}
+\end{enumerate}
+
+\textbf{Key metrics saved}:
+\begin{itemize}
+    \item Hallucination probability arrays: `probs_healthy_layer_5.npy`, `probs_patho_<disease>_layer_5.npy`.
+    \item Histograms: `prob_hist_layer_5.png` (distribution of probabilities).
+    \item ROC curves: `roc_layer_5.png`.
+    \item Precision-recall curves: `pr_layer_5.png`.
+    \item Summary JSON: `summary_eval.json` with all metrics and statistics.
+\end{itemize}
+
+\textbf{Expected outcomes}:
+
+\textbf{Hypothesis 1}: Mean hallucination probability increases under pathology.
+$$\mathbb{E}[p_{\text{patho}}] > \mathbb{E}[p_{\text{healthy}}]$$
+
+\textbf{Hypothesis 2}: Accuracy on pathological graphs is lower than on healthy graphs.
+$$\text{Acc}_{\text{patho}} < \text{Acc}_{\text{healthy}}$$
+
+\textbf{Hypothesis 3}: Paired tests show significant differences.
+$$p\text{-value}_{t\text{-test}} < 0.05$$
+
+\subsection{Step N6: Graph-Theoretic Metrics Comparison}
+
+\textbf{Purpose}: Quantify structural differences between healthy and pathological networks.
+
+\textbf{Implementation}: Module `hallucination/neuropathology_graph_metrics.py`
+
+\textbf{Metrics computed for each test graph}:
+
+\subsubsection{Segregation}
+
+Mean absolute within-module correlation:
+$$\text{Segregation} = \frac{1}{|\{(i,j) : m_i = m_j, i < j\}|} \sum_{m_i = m_j} |C[i,j]|$$
+
+\textbf{Interpretation}: High segregation indicates strong local clustering.
+
+\subsubsection{Aggregation}
+
+Mean absolute between-module correlation:
+$$\text{Aggregation} = \frac{1}{|\{(i,j) : m_i \neq m_j, i < j\}|} \sum_{m_i \neq m_j} |C[i,j]|$$
+
+\textbf{Interpretation}: High aggregation indicates strong global integration.
+
+\subsubsection{Clustering Coefficient}
+
+Average local clustering across all nodes. For node $i$ with degree $k_i$:
+$$C_i = \frac{\text{number of triangles involving } i}{\binom{k_i}{2}}$$
+
+Global clustering:
+$$\text{CC} = \frac{1}{N} \sum_{i=1}^{N} C_i$$
+
+\textbf{Interpretation}: High clustering coefficient indicates hierarchical organization.
+
+\subsubsection{Average Shortest Path Length}
+
+Using unweighted graph (adjacency matrix):
+$$L = \frac{1}{N(N-1)} \sum_{i \neq j} \text{dist}(i, j)$$
+
+where $\text{dist}(i, j)$ is the shortest path between nodes $i$ and $j$.
+
+\textbf{Interpretation}: Short paths indicate efficient global communication.
+
+\subsubsection{Small-Worldness}
+
+Normalized ratio of clustering to path length, compared to random graph baseline:
+$$\sigma = \frac{C_{\text{network}} / C_{\text{random}}}{L_{\text{network}} / L_{\text{random}}}$$
+
+\textbf{Interpretation}: $\sigma > 1$ indicates small-world properties (high clustering + short paths).
+
+\subsubsection{Modularity}
+
+Newman-Girvan modularity using predefined clusters:
+$$Q = \frac{1}{2m} \sum_{i,j} \left( A[i,j] - \frac{k_i k_j}{2m} \right) \delta(m_i, m_j)$$
+
+where $m$ is the number of edges, $k_i$ is the degree of node $i$, and $\delta(m_i, m_j) = 1$ iff nodes $i$ and $j$ are in the same module.
+
+\textbf{Interpretation}: High modularity indicates strong community structure.
+
+\subsubsection{Group-Averaged FC Matrices}
+
+Compute and save mean matrices:
+$$\bar{C}_{\text{healthy}} = \frac{1}{|T|} \sum_{q \in T} C_{\text{healthy}}^{(q)}$$
+$$\bar{C}_{\text{patho}} = \frac{1}{|T|} \sum_{q \in T} C_{\text{patho}}^{(q)}$$
+
+Visualize as heatmaps: `group_fc_metrics_healthy_layer_5.png` and `group_fc_metrics_patho_<disease>_layer_5.png`.
+
+\textbf{Workflow}:
+
+\begin{enumerate}
+    \item For each test sample pair $(C_{\text{healthy}}^{(q)}, C_{\text{patho}}^{(q)})$:
+    \begin{enumerate}
+        \item Cluster: $\ell = \text{cluster\_indices}(N, \text{num\_clusters})$.
+        \item Threshold to binary adjacency: $A_{\text{healthy}}, A_{\text{patho}}$.
+        \item Compute all metrics for both versions.
+        \item Store in row of results dataframe.
+    \end{enumerate}
+    \item Aggregate results:
+    \begin{enumerate}
+        \item Save per-sample metrics: `metrics_layer_5.csv`, `metrics_layer_5.npy`.
+        \item Compute summary statistics (mean, std, min, max, median) for each metric.
+        \item Save: `metrics_summary_layer_5.json`.
+    \end{enumerate}
+    \item Visualizations:
+    \begin{enumerate}
+        \item Histograms: `hist_segregation_layer_5.png`, etc.
+        \item Boxplots: `box_segregation_layer_5.png`, etc.
+        \item Group FC heatmaps: `group_fc_metrics_healthy_layer_5.png`, `group_fc_metrics_patho_<disease>_layer_5.png`.
+    \end{enumerate}
+\end{enumerate}
+
+\textbf{Expected outcomes}:
+
+For \textbf{epilepsy-like}:
+- Segregation increases (stronger local clustering)
+- Aggregation decreases (weaker long-range)
+- Clustering coefficient increases
+- Small-worldness decreases (less efficient)
+
+For \textbf{dementia-like}:
+- Both segregation and aggregation decrease (general network degradation)
+- Clustering coefficient decreases significantly
+- Small-worldness decreases substantially
+- Network becomes more random-like
+
+For \textbf{autism-like}:
+- Segregation increases more dramatically than in epilepsy
+- Aggregation decreases moderately
+- Modularity increases (stronger communities)
+- Network becomes more fragmented
+
+% ============================================================================
+\section{Configuration and Usage}
+% ============================================================================
+
+\subsection{SLURM Job Submission}
+
+Submit the neuropathology analysis to the cluster:
+
+\begin{lstlisting}[language=bash]
+sbatch run_hallu_mpcdf.slurm
+\end{lstlisting}
+
+\subsection{Configuration Parameters}
+
+Edit the top section of `run_hallu_mpcdf.slurm` to customize:
+
+\begin{lstlisting}[language=bash]
+# Dataset and Model Configuration
+DATASET_NAME="truthfulqa"
+MODEL_NAME="gpt2"
+CKPT_STEP=-1
+LAYER_ID=5
+
+# Network and Probe Configuration
+DENSITY=0.05
+NUM_LAYERS=3
+HIDDEN_CHANNELS=32
+GPU_ID=0
+FROM_SPARSE_DATA="--from_sparse_data"
+
+# Disease Pattern Configuration
+DISEASE_PATTERN="epilepsy_like"    # or "dementia_like", "autism_like"
+NUM_CLUSTERS=8
+WITHIN_SCALE=1.3
+BETWEEN_SCALE=0.5
+REWIRING_PROB=0.15
+DISTANCE_THRESHOLD=50
+\end{lstlisting}
+
+\subsection{Output Directory Structure}
+
+All results are saved under:
+\begin{lstlisting}
+MAIN_DIR=/ptmp/aomidvarnia/analysis_results/llm_graph
+\end{lstlisting}
+
+\begin{lstlisting}
+reports/neuropathology_analysis/<disease_pattern>/
+├── n1_construct_dataset.log
+├── n2_compute_network.log
+├── n3_train.log
+├── n4_neuropathology_connectivity.log
+├── n5_neuropathology_eval.log
+├── n6_neuropathology_graph_metrics.log
+├── group_fc_healthy_layer_5.npy
+├── group_fc_healthy_layer_5.png
+├── group_fc_patho_<disease>_layer_5.npy
+├── group_fc_patho_<disease>_layer_5.png
+├── probs_healthy_layer_5.npy
+├── probs_patho_<disease>_layer_5.npy
+├── prob_hist_layer_5.png
+├── roc_layer_5.png
+├── pr_layer_5.png
+├── metrics_layer_5.csv
+├── metrics_layer_5.npy
+├── metrics_summary_layer_5.json
+├── group_fc_metrics_healthy_layer_5.npy
+├── group_fc_metrics_healthy_layer_5.png
+├── group_fc_metrics_patho_<disease>_layer_5.npy
+├── group_fc_metrics_patho_<disease>_layer_5.png
+├── hist_segregation_layer_5.png
+├── box_segregation_layer_5.png
+├── hist_aggregation_layer_5.png
+├── box_aggregation_layer_5.png
+├── hist_clustering_layer_5.png
+├── box_clustering_layer_5.png
+├── hist_pathlen_layer_5.png
+├── box_pathlen_layer_5.png
+├── hist_smallworld_layer_5.png
+├── box_smallworld_layer_5.png
+├── hist_modularity_layer_5.png
+├── box_modularity_layer_5.png
+├── step_durations.png
+└── summary.json
+\end{lstlisting}
+
+% ============================================================================
+\section{Interpretation and Expected Results}
+% ============================================================================
+
+\subsection{Healthy vs Pathological Probability Distributions}
+
+\textbf{Expected pattern}:
+
+The probe is trained to output higher hallucination probability for actual hallucinated samples. When tested on pathological graphs:
+
+\begin{itemize}
+    \item \textbf{Healthy test graphs}: Distribution should match baseline test performance.
+    \item \textbf{Pathological test graphs}: Distribution should shift, with mean probability increasing.
+\end{itemize}
+
+\textbf{Why?} The pathological transformations degrade network quality, making connectivity patterns resemble those associated with hallucinations in the training data.
+
+\subsection{Accuracy and Performance Metrics}
+
+\textbf{Expected pattern}:
+
+\begin{itemize}
+    \item $\text{Accuracy}_{\text{healthy}} \approx \text{(from baseline eval)}$
+    \item $\text{Accuracy}_{\text{patho}} < \text{Accuracy}_{\text{healthy}}$ (performance degrades)
+    \item \textbf{Epilepsy-like}: Modest degradation (local increase, balanced disruption)
+    \item \textbf{Dementia-like}: Severe degradation (aggressive global disruption)
+    \item \textbf{Autism-like}: Moderate degradation (extreme segregation)
+\end{itemize}
+
+\textbf{Interpretation}: Network pathology makes the signal harder to detect; the probe relies on global connectivity patterns that are disrupted by disease.
+
+\subsection{Graph-Theoretic Metrics Shifts}
+
+\subsubsection{Segregation}
+
+\begin{itemize}
+    \item \textbf{Healthy}: $\text{Seg}_H \approx$ baseline within-module strength.
+    \item \textbf{Epilepsy-like}: $\text{Seg}_E = \text{Seg}_H \times 1.3$ (30\% increase).
+    \item \textbf{Dementia-like}: $\text{Seg}_D \approx \text{Seg}_H \times 0.9$ (mild decrease due to aggressive between-module reduction).
+    \item \textbf{Autism-like}: $\text{Seg}_A = \text{Seg}_H \times 1.4$ (40\% increase, strongest segregation).
+\end{itemize}
+
+\subsubsection{Aggregation}
+
+\begin{itemize}
+    \item \textbf{Healthy}: $\text{Agg}_H \approx$ baseline between-module strength.
+    \item \textbf{Epilepsy-like}: $\text{Agg}_E = \text{Agg}_H \times 0.5$ (50\% reduction).
+    \item \textbf{Dementia-like}: $\text{Agg}_D = \text{Agg}_H \times 0.4$ (60\% reduction, severe).
+    \item \textbf{Autism-like}: $\text{Agg}_A = \text{Agg}_H \times 0.6$ (40\% reduction).
+\end{itemize}
+
+\subsubsection{Clustering Coefficient}
+
+\begin{itemize}
+    \item \textbf{Healthy}: $CC_H \approx$ baseline (typically 0.2–0.4 for neural networks).
+    \item \textbf{Epilepsy-like}: $CC_E > CC_H$ (rewiring breaks some clustering, but within-module enhancement preserved).
+    \item \textbf{Dementia-like}: $CC_D \ll CC_H$ (aggressive rewiring destroys local triangles).
+    \item \textbf{Autism-like}: $CC_A \approx CC_H$ (segregation preserved, but rewiring is minimal).
+\end{itemize}
+
+\subsubsection{Small-Worldness}
+
+\begin{itemize}
+    \item \textbf{Healthy}: $\sigma_H > 1$ (network is small-world).
+    \item \textbf{Epilepsy-like}: $\sigma_E > \sigma_H$ (segregation dominates, increases small-world).
+    \item \textbf{Dementia-like}: $\sigma_D \ll 1$ (network becomes random-like, small-world properties lost).
+    \item \textbf{Autism-like}: $\sigma_A$ (depends on balance; likely still > 1 due to modularity).
+\end{itemize}
+
+\subsection{Group-Averaged Functional Connectivity Matrices}
+
+\textbf{Visual interpretation}:
+
+\begin{itemize}
+    \item \textbf{Healthy heatmap}: Block-diagonal structure visible (correlations cluster around diagonal blocks).
+    \item \textbf{Pathological heatmaps}: 
+    \begin{itemize}
+        \item \textbf{Epilepsy-like}: Blocks more pronounced (darker within blocks, lighter between).
+        \item \textbf{Dementia-like}: Globally dimmer, less block structure visible.
+        \item \textbf{Autism-like}: Highly pronounced blocks, clear separation.
+    \end{itemize}
+\end{itemize}
+
+% ============================================================================
+\section{Statistical Analysis and Hypothesis Testing}
+% ============================================================================
+
+\subsection{Paired t-Test on Hallucination Probabilities}
+
+\textbf{Null hypothesis}: There is no difference in hallucination probability between healthy and pathological graphs.
+$$H_0: \mathbb{E}[p_{\text{patho}} - p_{\text{healthy}}] = 0$$
+
+\textbf{Test statistic}:
+$$t = \frac{\bar{\Delta p}}{s_{\Delta p} / \sqrt{n}}$$
+
+where $\bar{\Delta p} = \frac{1}{n} \sum_{i=1}^{n} (p_{\text{patho}}^{(i)} - p_{\text{healthy}}^{(i)})$ and $s_{\Delta p}$ is the sample standard deviation.
+
+\textbf{Interpretation}:
+- If $p\text{-value} < 0.05$, reject $H_0$: pathological connectivity significantly increases hallucination probability.
+- Expected outcome: $p\text{-value} \ll 0.05$ (strong evidence).
+
+\subsection{Wilcoxon Signed-Rank Test}
+
+Non-parametric alternative to paired t-test, does not assume normality.
+
+\textbf{Interpretation}:
+- Robust to outliers and non-normal distributions.
+- Similar expected outcome: $p\text{-value} < 0.05$.
+
+\subsection{Effect Sizes}
+
+\textbf{Cohen's d} (standardized difference):
+$$d = \frac{\bar{\Delta p}}{s_{\Delta p}}$$
+
+\textbf{Interpretation}:
+- $|d| < 0.2$: negligible
+- $0.2 \leq |d| < 0.5$: small
+- $0.5 \leq |d| < 0.8$: medium
+- $|d| \geq 0.8$: large
+
+\textbf{Expected outcome}: Dementia-like should show largest effect sizes.
+
+% ============================================================================
+\section{Comparison Across Disease Patterns}
+% ============================================================================
+
+\subsection{Probe Performance Degradation}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Condition} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+\midrule
+Healthy & $\approx 0.72$ & $\approx 0.70$ & $\approx 0.75$ & $\approx 0.72$ \\
+Epilepsy-like & $\approx 0.65$ & $\approx 0.62$ & $\approx 0.70$ & $\approx 0.65$ \\
+Dementia-like & $\approx 0.55$ & $\approx 0.50$ & $\approx 0.60$ & $\approx 0.55$ \\
+Autism-like & $\approx 0.60$ & $\approx 0.57$ & $\approx 0.65$ & $\approx 0.60$ \\
+\bottomrule
+\end{tabular}
+\caption{Expected probe performance across conditions. Numbers are illustrative; actual values depend on implementation and dataset.}
+\end{table}
+
+\subsection{Network Metrics Summary}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Metric} & \textbf{Healthy} & \textbf{Epi-like} & \textbf{Dem-like} & \textbf{Aut-like} \\
+\midrule
+Segregation & 0.30 & 0.39 & 0.27 & 0.42 \\
+Aggregation & 0.15 & 0.075 & 0.06 & 0.09 \\
+CC & 0.25 & 0.20 & 0.10 & 0.25 \\
+Path Length & 2.5 & 2.8 & 3.5 & 2.6 \\
+Small-Worldness & 1.2 & 1.5 & 0.5 & 1.3 \\
+Modularity & 0.35 & 0.42 & 0.25 & 0.50 \\
+\bottomrule
+\end{tabular}
+\caption{Expected network metrics. Illustrative values; see `metrics_summary_layer_5.json` for actual results.}
+\end{table}
+
+% ============================================================================
+\section{Troubleshooting and Common Issues}
+% ============================================================================
+
+\subsection{Issue: Unbound PYTHONPATH Variable}
+
+\textbf{Error}: `PYTHONPATH: unbound variable`
+
+\textbf{Solution}: Use `${PYTHONPATH:-}` in SLURM script to safely handle unset variable.
+
+\begin{lstlisting}[language=bash]
+export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
+\end{lstlisting}
+
+\subsection{Issue: No GPU Available}
+
+\textbf{Error}: `RuntimeError: No HIP GPUs are available`
+
+\textbf{Solution}: Use `--gpu_id -1` to run on CPU or ensure GPU is available via `--gres=gpu:1`.
+
+\subsection{Issue: Out of Memory}
+
+\textbf{Error}: Memory allocation error during probe training.
+
+\textbf{Solution}: Reduce `batch_size` or `eval_batch_size` in SLURM config.
+
+\subsection{Issue: Pathological Matrices Not Generated}
+
+\textbf{Error}: `no_healthy_correlation_matrices_found.`
+
+\textbf{Solution}: Ensure Step N2 (healthy connectivity) completed successfully by checking `n2_compute_network.log`.
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+This neuropathology simulation pipeline extends the baseline hallucination detection analysis by introducing disease-like alterations to the LLM's functional connectivity. By systematically transforming healthy networks into pathological versions inspired by real brain diseases (epilepsy, dementia, autism), we can:
+
+\begin{enumerate}
+    \item Understand the network properties underlying hallucination detection.
+    \item Test probe robustness to network perturbations.
+    \item Identify critical connectivity patterns for accurate reasoning.
+    \item Generate insights into how network degradation affects model behavior.
+\end{enumerate}
+
+The analysis produces comprehensive reports with visualizations, statistical tests, and metrics that enable rigorous comparison of healthy versus pathological neural dynamics in LLMs.
+
+\subsection{Future Work}
+
+\begin{itemize}
+    \item \textbf{Custom disease patterns}: Define additional disease presets based on specific neuroscientific phenomena.
+    \item \textbf{Targeted interventions}: Instead of global transformations, selectively alter specific hubs or pathways.
+    \item \textbf{Progressive disease}: Gradually increase disease severity and measure probe degradation curves.
+    \item \textbf{Recovery analysis}: Apply correction mechanisms to pathological networks and measure recovery.
+    \item \textbf{Multi-layer analysis}: Examine disease effects across multiple LLM layers simultaneously.
+    \item \textbf{Cross-model comparison}: Compare neuropathology effects across different model architectures.
+\end{itemize}
+
+\end{document}
