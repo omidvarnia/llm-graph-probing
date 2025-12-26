@@ -63,7 +63,7 @@ mkdir -p ${MAIN_DIR}/slurm_logs
 source "${ENV_PATH}/bin/activate"
 
 # Set environment variables
-export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
+export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export MAIN_DIR="${MAIN_DIR}"
 
 # Run neuropathology analysis
