@@ -1,0 +1,57 @@
+{
+  "steps": [
+    {
+      "step": "N1",
+      "name": "construct_dataset",
+      "status": "ok",
+      "duration_sec": 3.5357075738720596,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n1_construct_dataset.log",
+      "dataset_path": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa.csv"
+    },
+    {
+      "step": "N2",
+      "name": "compute_network",
+      "status": "ok",
+      "duration_sec": 201.0775335500948,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n2_compute_network.log"
+    },
+    {
+      "step": "N3",
+      "name": "train",
+      "status": "ok",
+      "duration_sec": 258.4823644789867,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n3_train.log",
+      "best_model": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_5/best_model_density-0.05_dim-32_hop-3_input-corr.pth"
+    },
+    {
+      "step": "N4",
+      "name": "neuropathology_connectivity",
+      "status": "ok",
+      "duration_sec": 39255.751653774176,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n4_neuropathology_connectivity.log",
+      "artifacts": {
+        "group_fc_healthy": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/group_fc_healthy_layer_5.npy",
+        "group_fc_patho": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/group_fc_patho_epilepsy_like_layer_5.npy",
+        "group_fc_healthy_png": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/group_fc_healthy_layer_5.png",
+        "group_fc_patho_png": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/group_fc_patho_epilepsy_like_layer_5.png"
+      }
+    },
+    {
+      "step": "N5",
+      "name": "neuropathology_eval",
+      "status": "ok",
+      "duration_sec": 117.09076195815578,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n5_neuropathology_eval.log",
+      "delta_probs_mean": 0.07343802601099014,
+      "summary": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/summary_eval.json"
+    },
+    {
+      "step": "N6",
+      "name": "neuropathology_graph_metrics",
+      "status": "ok",
+      "duration_sec": 6208.813280421775,
+      "log": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/n6_neuropathology_graph_metrics.log",
+      "metrics_summary": "/viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/epilepsy_like/metrics_summary_layer_5.json"
+    }
+  ]
+}

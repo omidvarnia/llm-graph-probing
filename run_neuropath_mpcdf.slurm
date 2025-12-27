@@ -26,6 +26,26 @@ set -euo pipefail
 # =============================================================================
 # Configuration Parameters (modify as needed)
 # =============================================================================
+# Load parameters from YAML (sets variables if present)
+eval "$( ${PYTHON} ${PROJECT_DIR}/utils/load_params.py --config ${PROJECT_DIR}/pipeline_config.yaml --pipeline neuropathology )"
+
+# Fallback defaults only if not provided via YAML
+DATASET_NAME=${DATASET_NAME:-truthfulqa}
+MODEL_NAME=${MODEL_NAME:-gpt2}
+CKPT_STEP=${CKPT_STEP:- -1}
+LAYER_ID=${LAYER_ID:-5}
+DENSITY=${DENSITY:-0.10}
+NUM_LAYERS=${NUM_LAYERS:-4}
+HIDDEN_CHANNELS=${HIDDEN_CHANNELS:-64}
+GPU_ID=${GPU_ID:-0}
+FROM_SPARSE_DATA=${FROM_SPARSE_DATA:-true}
+EARLY_STOP_PATIENCE=${EARLY_STOP_PATIENCE:-15}
+DISEASE_PATTERN=${DISEASE_PATTERN:-epilepsy_like}
+NUM_CLUSTERS=${NUM_CLUSTERS:-8}
+WITHIN_SCALE=${WITHIN_SCALE:-1.2}
+BETWEEN_SCALE=${BETWEEN_SCALE:-0.7}
+REWIRING_PROB=${REWIRING_PROB:-0.15}
+DISTANCE_THRESHOLD=${DISTANCE_THRESHOLD:-}
 
 # Dataset and Model Configuration
 DATASET_NAME="truthfulqa"         # Dataset: truthfulqa, halueval, medhallu, helm
@@ -34,19 +54,24 @@ CKPT_STEP=-1                      # Checkpoint step (-1 for main checkpoint)
 LAYER_ID=5                        # LLM layer to analyze
 
 # Network and Probe Configuration
-DENSITY=0.05                      # Network density (0.01 to 1.0)
-NUM_LAYERS=3                      # Number of GNN layers
-HIDDEN_CHANNELS=32                # Hidden channels in GNN
+DENSITY=0.10                      # Network density (0.01 to 1.0) - increased from 0.05 for better signal
+NUM_LAYERS=4                      # Number of GNN layers - increased from 3 for more capacity
+HIDDEN_CHANNELS=64                # Hidden channels in GNN - increased from 32 for better representation
 GPU_ID=0                          # GPU ID to use
 FROM_SPARSE_DATA="--from_sparse_data"  # Use sparse data (remove to disable)
+EARLY_STOP_PATIENCE=15            # Early stopping patience (epochs without improvement)
 
 # Disease Pattern Configuration
 DISEASE_PATTERN="epilepsy_like"   # Disease preset: epilepsy_like, dementia_like, autism_like
 NUM_CLUSTERS=8                    # Number of functional modules
-WITHIN_SCALE=1.3                  # Scale factor for within-module correlations (>1 increases segregation)
-BETWEEN_SCALE=0.5                 # Scale factor for between-module correlations (<1 decreases aggregation)
+WITHIN_SCALE=1.2                  # Scale factor for within-module correlations (>1 increases segregation) - reduced from 1.3
+BETWEEN_SCALE=0.7                 # Scale factor for between-module correlations (<1 decreases aggregation) - increased from 0.5 for gentler reduction
 REWIRING_PROB=0.15                # Edge rewiring probability to reduce small-worldness
-DISTANCE_THRESHOLD=50             # Index distance threshold for aggregation decrease
+DISTANCE_THRESHOLD=""             # Index distance threshold for aggregation decrease - disabled to avoid double scaling
+
+# Append density level to disease tag (without dot) for folder naming
+DENSITY_STR="${DENSITY//./}"
+DISEASE_PATTERN="${DISEASE_PATTERN}_d${DENSITY_STR}"
 
 # =============================================================================
 # Paths (usually don't need to change these)
@@ -78,13 +103,14 @@ ${PYTHON} ${PROJECT_DIR}/my_analysis/neuropathology_analysis.py \
   --num_layers ${NUM_LAYERS} \
   --hidden_channels ${HIDDEN_CHANNELS} \
   --gpu_id ${GPU_ID} \
+  --early_stop_patience ${EARLY_STOP_PATIENCE} \
   --disease_pattern ${DISEASE_PATTERN} \
   --num_clusters ${NUM_CLUSTERS} \
   --within_scale ${WITHIN_SCALE} \
   --between_scale ${BETWEEN_SCALE} \
   --rewiring_prob ${REWIRING_PROB} \
-  --distance_threshold ${DISTANCE_THRESHOLD} \
-  ${FROM_SPARSE_DATA}
+  $([ -n "${DISTANCE_THRESHOLD}" ] && echo "--distance_threshold ${DISTANCE_THRESHOLD}" || echo "") \
+  $([ "${FROM_SPARSE_DATA}" = "true" ] && echo "--from_sparse_data" || echo "")
 
 echo ""
 echo "============================================================"

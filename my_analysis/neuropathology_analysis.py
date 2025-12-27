@@ -83,6 +83,7 @@ parser.add_argument("--density", type=float, default=0.05)
 parser.add_argument("--num_layers", type=int, default=3)
 parser.add_argument("--hidden_channels", type=int, default=32)
 parser.add_argument("--gpu_id", type=int, default=0)
+parser.add_argument("--early_stop_patience", type=int, default=20)
 parser.add_argument("--disease_pattern", type=str, default="epilepsy_like")
 parser.add_argument("--num_clusters", type=int, default=8)
 parser.add_argument("--within_scale", type=float, default=1.3)
@@ -170,6 +171,7 @@ rc = run([
     f"--hidden_channels={args.hidden_channels}",
     f"--lr=0.001",
     f"--num_epochs=10",
+    f"--early_stop_patience={args.early_stop_patience}",
     f"--gpu_id={args.gpu_id}",
 ] + (["--from_sparse_data"] if args.from_sparse_data else []), cwd=project_dir, env=env, log_file=step_log)
 dur = time.monotonic() - start

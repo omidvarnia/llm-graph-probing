@@ -26,19 +26,39 @@ set -euo pipefail
 # =============================================================================
 # Configuration Parameters (modify as needed)
 # =============================================================================
+# Load parameters from YAML (sets variables if present)
+eval "$( ${PYTHON} ${PROJECT_DIR}/utils/load_params.py --config ${PROJECT_DIR}/pipeline_config.yaml --pipeline hallucination )"
+
+# Fallback defaults only if not provided via YAML
+DATASET_NAME=${DATASET_NAME:-truthfulqa}
+MODEL_NAME=${MODEL_NAME:-gpt2}
+CKPT_STEP=${CKPT_STEP:- -1}
+BATCH_SIZE=${BATCH_SIZE:-16}
+LAYER_ID=${LAYER_ID:-5}
+PROBE_INPUT=${PROBE_INPUT:-corr}
+DENSITY=${DENSITY:-0.10}
+EVAL_BATCH_SIZE=${EVAL_BATCH_SIZE:-32}
+HIDDEN_CHANNELS=${HIDDEN_CHANNELS:-64}
+NUM_LAYERS=${NUM_LAYERS:-4}
+LEARNING_RATE=${LEARNING_RATE:-0.0005}
+FROM_SPARSE_DATA=${FROM_SPARSE_DATA:-true}
+NUM_EPOCHS=${NUM_EPOCHS:-200}
+GPU_ID=${GPU_ID:-0}
+EARLY_STOP_PATIENCE=${EARLY_STOP_PATIENCE:-15}
 DATASET_NAME="truthfulqa"        # Dataset: truthfulqa, halueval, medhallu, helm
 MODEL_NAME="gpt2"                 # Model: gpt2, gpt2-medium, gpt2-large, pythia-160m, etc.
 CKPT_STEP=-1                      # Checkpoint step (-1 for main checkpoint)
 BATCH_SIZE=16                     # Batch size for LLM inference
 LAYER_ID=5                        # LLM layer to analyze
 PROBE_INPUT="corr"                # Probe input type: corr or activation
-NETWORK_DENSITY=0.05              # Network density (0.01 to 1.0)
+DENSITY=0.10                      # Network density (0.01 to 1.0) - increased for better signal
 EVAL_BATCH_SIZE=32                # Batch size for evaluation
-NUM_CHANNELS=32                   # Hidden channels in GNN
-NUM_LAYERS=3                      # Number of GNN layers
-LEARNING_RATE=0.001               # Learning rate
+HIDDEN_CHANNELS=64                # Hidden channels in GNN - increased for capacity
+NUM_LAYERS=4                      # Number of GNN layers - increased for capacity
+LEARNING_RATE=0.0005              # Learning rate - lowered for stability
 FROM_SPARSE_DATA=true             # Use sparse data representation
 NUM_EPOCHS=200                     # Number of training epochs
+EARLY_STOP_PATIENCE=15            # Early stopping patience (epochs without improvement)
 GPU_ID=0                          # GPU ID to use
 
 # =============================================================================
@@ -69,12 +89,13 @@ ${PYTHON} ${PROJECT_DIR}/my_analysis/hallucination_detection_analysis.py \
   --batch_size ${BATCH_SIZE} \
   --layer_id ${LAYER_ID} \
   --probe_input ${PROBE_INPUT} \
-  --network_density ${NETWORK_DENSITY} \
+  --network_density ${DENSITY} \
   --eval_batch_size ${EVAL_BATCH_SIZE} \
-  --num_channels ${NUM_CHANNELS} \
+  --num_channels ${HIDDEN_CHANNELS} \
   --num_layers ${NUM_LAYERS} \
   --learning_rate ${LEARNING_RATE} \
   --num_epochs ${NUM_EPOCHS} \
+  --early_stop_patience ${EARLY_STOP_PATIENCE} \
   --gpu_id ${GPU_ID} \
   $([ "${FROM_SPARSE_DATA}" = "true" ] && echo "--from_sparse_data" || echo "")
 
@@ -86,7 +107,7 @@ echo "Dataset: ${DATASET_NAME}"
 echo "Model: ${MODEL_NAME}"
 echo "Layer: ${LAYER_ID}"
 echo "Probe input: ${PROBE_INPUT}"
-echo "Network density: ${NETWORK_DENSITY}"
+echo "Network density: ${DENSITY}"
 echo "Results saved to: ${MAIN_DIR}/reports/hallucination_analysis/"
 echo "============================================================"
 

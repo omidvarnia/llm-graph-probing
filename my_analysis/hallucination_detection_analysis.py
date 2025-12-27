@@ -111,6 +111,7 @@ parser.add_argument("--num_layers", type=int, default=3, help="Number of GNN lay
 parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
 parser.add_argument("--from_sparse_data", action="store_true", default=True, help="Use sparse data representation")
 parser.add_argument("--num_epochs", type=int, default=10, help="Number of training epochs")
+parser.add_argument("--early_stop_patience", type=int, default=20, help="Early stopping patience (epochs without improvement)")
 parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
 args, unknown = parser.parse_known_args()
 
@@ -152,6 +153,7 @@ num_layers = args.num_layers
 learning_rate = args.learning_rate
 from_sparse_data = args.from_sparse_data
 num_epochs = args.num_epochs
+early_stop_patience = args.early_stop_patience
 
 # Output directories for interim artifacts
 reports_dir = main_dir / "reports" / "hallucination_analysis"
@@ -359,6 +361,7 @@ logging.info(f"  Learning rate: {learning_rate}")
 logging.info(f"  Batch size: {batch_size}")
 logging.info(f"  Eval batch size: {eval_batch_size}")
 logging.info(f"  Num epochs: {num_epochs}")
+logging.info(f"  Early stop patience: {early_stop_patience}")
 logging.info("Executing train.py...")
 logging.info("This may take a while...")
 step3_log = reports_dir / "step3_train.log"
@@ -380,6 +383,7 @@ result = run(
         f"--hidden_channels={num_channels}",
         f"--lr={learning_rate}",
         f"--num_epochs={num_epochs}",
+        f"--early_stop_patience={early_stop_patience}",
         f"--gpu_id={args.gpu_id}",
     ] + (["--from_sparse_data"] if from_sparse_data else []),
     cwd=project_dir,
