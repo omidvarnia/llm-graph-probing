@@ -78,7 +78,8 @@ def main(_):
     else:
         save_model_name_2 = f"{FLAGS.llm_model_name_2}_step{FLAGS.ckpt_step_2}"
     save_model_name = f"{save_model_name_1}_{save_model_name_2}"
-    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
+    density_tag = f"{int(round(FLAGS.network_density * 100)):02d}"
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
     model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     eval_model(model, test_data_loader, device)

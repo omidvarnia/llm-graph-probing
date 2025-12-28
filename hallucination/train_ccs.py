@@ -44,7 +44,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
 
-    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
+    density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
     os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_metrics = {
@@ -120,10 +121,11 @@ def main(_):
     device = torch.device(f"cuda:{FLAGS.gpu_id}")
     assert FLAGS.num_layers <= 0, "CCS probing only supports MLP classifier."
 
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = main_dir / FLAGS.llm_model_name
+        model_dir = main_dir / sanitized_model_name
     else:
-        model_dir = main_dir / f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = main_dir / f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     save_model_name = main_dir / f"hallucination/{FLAGS.dataset_name}/{model_dir}"
 
     train_loader, test_loader = get_truthfulqa_ccs_dataloader(
@@ -159,7 +161,8 @@ def main(_):
     )
 
     if FLAGS.resume:
-        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
+        density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-ccs.pth"
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)

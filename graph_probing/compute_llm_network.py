@@ -100,7 +100,11 @@ def run_llm(
                     output_hidden_states=True,
                 )
                 batch_hidden_states = torch.stack(model_output.hidden_states[1:]).cpu().numpy()  # layer activations (num_layers, B, L, D)
-                batch_hidden_states = batch_hidden_states[layer_list]
+                num_layers_avail = batch_hidden_states.shape[0]
+                zero_based = [int(l) for l in layer_list if 0 <= int(l) < num_layers_avail]
+                if not zero_based:
+                    zero_based = [num_layers_avail - 1]
+                batch_hidden_states = batch_hidden_states[zero_based]
                 batch_attention_mask = inputs["attention_mask"].numpy()  # (B, L)
                 actual_batch_size = batch_hidden_states.shape[1]
                 batch_sentence_indices = sentence_indices[i:i+actual_batch_size]
@@ -133,6 +137,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
                     corr = np.corrcoef(sentence_hidden_states)
                     if network_density < 1.0:
                         percentile_threshold = network_density * 100
+                        density_tag = f"{int(round(network_density * 100)):02d}"
                         threshold = np.percentile(np.abs(corr), 100 - percentile_threshold)
                         corr[np.abs(corr) < threshold] = 0
                         np.fill_diagonal(corr, 1.0)
@@ -140,8 +145,8 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
                         edge_index, edge_attr = dense_to_sparse(corr)
                         edge_index = edge_index.numpy()
                         edge_attr = edge_attr.numpy()
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{network_density}_edge_index.npy", edge_index)
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{network_density}_edge_attr.npy", edge_attr)
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_index.npy", edge_index)
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_attr.npy", edge_attr)
                     else:
                         np.save(f"{p_dir_name}/layer_{layer_idx}_corr.npy", corr)
 

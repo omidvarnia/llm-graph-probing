@@ -83,7 +83,11 @@ def run_llm(
                 )
                 
                 batch_hidden_states_all_layers = torch.stack(model_output.hidden_states[1:]).cpu().float().numpy() # (num_layers, batch_size, seq_length, hidden_size)
-                batch_hidden_states = batch_hidden_states_all_layers[layer_list]
+                num_layers_avail = batch_hidden_states_all_layers.shape[0]
+                zero_based = [int(l) for l in layer_list if 0 <= int(l) < num_layers_avail]
+                if not zero_based:
+                    zero_based = [num_layers_avail - 1]
+                batch_hidden_states = batch_hidden_states_all_layers[zero_based]
                 if random:
                     batch_hidden_states = np.random.rand(*batch_hidden_states.shape)
                 
@@ -121,10 +125,11 @@ def main(_):
     os.makedirs(dataset_dir, exist_ok=True)
 
     model_name = FLAGS.llm_model_name
+    sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     dir_name = os.path.join(dataset_dir, model_dir)
     os.makedirs(dir_name, exist_ok=True)
 

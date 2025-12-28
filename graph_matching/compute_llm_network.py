@@ -69,7 +69,11 @@ def run_llm(
                     output_hidden_states=True,
                 )
                 batch_hidden_states = torch.stack(model_output.hidden_states[1:]).cpu().numpy()  # layer activations (num_layers, B, L, D)
-                batch_hidden_states = batch_hidden_states[layer_list]
+                num_layers_avail = batch_hidden_states.shape[0]
+                zero_based = [int(l) for l in layer_list if 0 <= int(l) < num_layers_avail]
+                if not zero_based:
+                    zero_based = [num_layers_avail - 1]
+                batch_hidden_states = batch_hidden_states[zero_based]
                 batch_attention_mask = inputs["attention_mask"].numpy()  # (B, L)
                 actual_batch_size = batch_hidden_states.shape[1]
                 batch_sentence_indices = sentence_indices[i:i+actual_batch_size]

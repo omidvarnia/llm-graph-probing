@@ -1,3 +1,129 @@
+"""
+================================================================================
+HALLUCINATION DETECTION ANALYSIS
+================================================================================
+
+PURPOSE:
+    This script orchestrates the 3-step hallucination detection pipeline:
+    1. Construct dataset and extract LLM activations
+    2. Compute functional connectivity (FC) networks
+    3. Train and evaluate hallucination detection probes
+
+CONFIGURATION:
+    All pipeline parameters are loaded from a YAML config file.
+    Pass config path via: --config /path/to/config.yaml
+
+FILE & FOLDER NAMING CONVENTIONS:
+================================================================================
+
+1. MODEL NAME SANITIZATION:
+    - Input:  "Qwen/Qwen2.5-0.5B"
+    - Output: "Qwen_Qwen2_5_0_5B"
+    - Rule: Replace '/', '-', and '.' with '_' to create safe folder names
+   - Used in: model_tag, directory paths, filenames
+
+2. DIRECTORY STRUCTURE:
+   
+   ${MAIN_DIR}/reports/hallucination_analysis/
+   ├── {model_tag}/                           # e.g., Qwen_Qwen2_5_0_5B
+   │   ├── pipeline_config.yaml               # Copy of config file (provenance)
+   │   ├── layer_5/                           # Per-layer subdirectory
+   │   │   ├── N1_construct_dataset.log       # Step 1: dataset construction log
+   │   │   ├── N2_compute_network.log         # Step 2: FC matrix computation log
+   │   │   ├── N3_train_probe.log             # Step 3: probe training log
+   │   │   ├── summary.json                   # Step results summary
+   │   │   ├── {step_name}/                   # Artifacts by step
+   │   │   │   ├── train_history.json         # Training curves
+   │   │   │   ├── train_losses.txt           # Per-epoch training losses
+   │   │   │   ├── probe_performance.json     # Classification metrics
+   │   │   │   └── ...                        # Additional artifacts
+   │   │   ├── fc_healthy_layer_5.npy         # Correlation matrices (healthy)
+   │   │   ├── fc_healthy_layer_5.png         # Visualization (healthy)
+   │   │   ├── probe_weights/                 # Trained probe checkpoint
+   │   │   │   └── best_model.pt
+   │   │   └── tensorboard/                   # TensorBoard logs
+   │   │       └── events.out.tfevents...
+   │   └── ...                                # Additional layers
+
+3. FILENAME PATTERNS:
+
+   A. Correlation Matrices (NumPy files):
+      - Format: fc_[condition]_layer_{layer_id}.npy
+      - Examples:
+        * fc_healthy_layer_5.npy      (healthy condition)
+        * fc_hallucination_layer_5.npy (hallucination condition)
+      - Dimensions: (n_samples, n_nodes, n_nodes)
+
+   B. Visualization Images (PNG):
+      - Format: fc_[condition]_layer_{layer_id}.png
+      - Examples:
+        * fc_healthy_layer_5.png
+        * fc_hallucination_layer_5.png
+      - Type: Heatmap of correlation matrix
+
+   C. Log Files:
+      - Format: N{step_number}_{step_name}.log
+      - Examples:
+        * N1_construct_dataset.log
+        * N2_compute_network.log
+        * N3_train_probe.log
+      - Content: All stdout/stderr from subprocess calls
+
+   D. Results Summaries (JSON):
+      - summary.json - Top-level results summary
+        * Fields: step, name, status, duration_sec, log, artifacts, metrics
+      - probe_performance.json - Classification metrics
+        * Fields: accuracy, precision, recall, f1, auc_roc, best_epoch, etc.
+      - train_history.json - Training curves
+        * Fields: train_loss, val_loss, val_acc, etc. (per epoch)
+
+4. CHECKPOINT & MODEL PATHS:
+
+   Saved Checkpoints:
+   ${MAIN_DIR}/saves/
+   ├── {model_tag}/                           # Sanitized model name
+   │   └── {dataset_name}/
+   │       └── {ckpt_step}/
+   │           └── layer_{layer_id}/
+   │               ├── best_model.pt          # Best probe checkpoint
+   │               ├── final_model.pt         # Final epoch checkpoint
+   │               └── optimizer.pt           # Optimizer state
+
+5. ARTIFACT ORGANIZATION:
+
+   Step-specific artifacts are organized in subdirectories:
+   
+   layer_5/
+   ├── construct_dataset/
+   │   └── dataset_stats.json
+   ├── compute_network/
+   │   ├── fc_health_layer_5.npy
+   │   ├── fc_health_layer_5.png
+   │   └── connectivity_stats.json
+   └── train_probe/
+       ├── probe_performance.json
+       ├── train_history.json
+       ├── best_model.pt
+       └── tensorboard/
+
+6. SPECIAL NAMING RULES:
+
+   - Layer IDs: Always formatted as integers (5, 10, etc.)
+   - Density levels: Stored separately in connectivity computation
+   - Dataset names: Preserved as-is (truthfulqa, halueval, etc.)
+   - Condition labels: healthy, hallucination, etc.
+   - Model checkpoints: {step}.pt format (best_model.pt, final_model.pt)
+
+================================================================================
+EXAMPLE FULL PATH:
+/ptmp/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/
+  Qwen_Qwen2_5_0_5B/
+  layer_5/
+  fc_healthy_layer_5.npy
+
+================================================================================
+"""
+
 import sys
 from pathlib import Path
 import logging
@@ -11,8 +137,17 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import shutil
+import yaml
 from tensorboard.backend.event_processing import event_accumulator
 from ptpython.repl import embed
+
+
+def load_config_from_yaml(config_path: Path) -> dict:
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
 
 
 def run(cmd, *, cwd: Path, env: dict, log_file: Path | None = None) -> int:
@@ -39,6 +174,9 @@ def run(cmd, *, cwd: Path, env: dict, log_file: Path | None = None) -> int:
         line = raw_line
         # Skip noisy lines
         if "amdgpu.ids" in line:
+            continue
+        # Skip known benign warnings (e.g., sliding window attention advisory)
+        if "Sliding Window Attention is enabled" in line:
             continue
         # Skip absl logging format (e.g., "I1221 23:19:42.675042 123456")
         if line.startswith(("I", "W", "E")) and len(line) > 4 and line[1].isdigit():
@@ -94,29 +232,52 @@ def run(cmd, *, cwd: Path, env: dict, log_file: Path | None = None) -> int:
 default_project_dir = '/u/aomidvarnia/GIT_repositories/llm-graph-probing'
 default_main_dir = '/ptmp/aomidvarnia/analysis_results/llm_graph'
 
-# Parse arguments (allow overriding main directory for data/outputs and project location)
-parser = argparse.ArgumentParser(description="Graph Probing Analysis")
-parser.add_argument("--main_dir", type=str, default=str(default_main_dir), help="Root directory to save data and results")
-parser.add_argument("--project_dir", type=str, default=str(default_project_dir), help="Project directory containing code")
-parser.add_argument("--dataset_name", type=str, default="truthfulqa", help="Dataset name: truthfulqa, halueval, medhallu, helm")
-parser.add_argument("--model_name", type=str, default="gpt2", help="Model name: gpt2, gpt2-medium, gpt2-large, pythia-160m, etc.")
-parser.add_argument("--ckpt_step", type=int, default=-1, help="Checkpoint step (-1 for main checkpoint)")
-parser.add_argument("--batch_size", type=int, default=16, help="Batch size for LLM inference")
-parser.add_argument("--layer_id", type=int, default=5, help="LLM layer to analyze")
-parser.add_argument("--probe_input", type=str, default="corr", help="Probe input type: corr or activation")
-parser.add_argument("--network_density", type=float, default=0.05, help="Network density (0.01 to 1.0)")
-parser.add_argument("--eval_batch_size", type=int, default=32, help="Batch size for evaluation")
-parser.add_argument("--num_channels", type=int, default=32, help="Hidden channels in GNN")
-parser.add_argument("--num_layers", type=int, default=3, help="Number of GNN layers")
-parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
-parser.add_argument("--from_sparse_data", action="store_true", default=True, help="Use sparse data representation")
-parser.add_argument("--num_epochs", type=int, default=10, help="Number of training epochs")
-parser.add_argument("--early_stop_patience", type=int, default=20, help="Early stopping patience (epochs without improvement)")
-parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use")
-args, unknown = parser.parse_known_args()
+# Parse arguments - only config file path is required
+parser = argparse.ArgumentParser(description="Graph Probing Analysis - Load all parameters from config file")
+parser.add_argument("--config", type=str, required=True, help="Path to pipeline configuration YAML file")
+parser.add_argument("--main_dir", type=str, default=None, help="Override root directory (optional)")
+parser.add_argument("--project_dir", type=str, default=None, help="Override project directory (optional)")
+args = parser.parse_args()
 
-main_dir = Path(args.main_dir).resolve()
-project_dir = Path(args.project_dir).resolve()
+# Load configuration from YAML
+config_path = Path(args.config).resolve()
+if not config_path.exists():
+    print(f"ERROR: Configuration file not found: {config_path}")
+    sys.exit(1)
+
+config = load_config_from_yaml(config_path)
+
+# Extract common and hallucination-specific parameters from config
+common_cfg = config.get('common', {})
+hallu_cfg = config.get('hallucination', {})
+
+# Build parameters from config with optional command-line overrides
+main_dir = Path(common_cfg.get('main_dir') or args.main_dir or default_main_dir).resolve()
+project_dir = Path(common_cfg.get('project_dir') or args.project_dir or default_project_dir).resolve()
+dataset_name = common_cfg.get('dataset_name', 'truthfulqa')
+model_name = common_cfg.get('model_name', 'gpt2')
+ckpt_step = int(common_cfg.get('ckpt_step', -1))
+batch_size = int(hallu_cfg.get('batch_size', 16))
+layer_list = common_cfg.get('layer_list', '5')
+probe_input = hallu_cfg.get('probe_input', 'corr')
+network_density = float(common_cfg.get('density', 0.05))
+eval_batch_size = int(hallu_cfg.get('eval_batch_size', 32))
+num_channels = int(common_cfg.get('hidden_channels', 32))
+num_layers = int(common_cfg.get('num_layers', 2))
+learning_rate = float(hallu_cfg.get('learning_rate', 0.001))
+num_epochs = int(hallu_cfg.get('num_epochs', 100))
+early_stop_patience = int(hallu_cfg.get('early_stop_patience', 20))
+label_smoothing = float(hallu_cfg.get('label_smoothing', 0.1))
+gradient_clip = float(hallu_cfg.get('gradient_clip', 1.0))
+warmup_epochs = int(hallu_cfg.get('warmup_epochs', 5))
+dataset_fraction = float(common_cfg.get('dataset_fraction', 1.0))
+gpu_id = int(common_cfg.get('gpu_id', 0))
+from_sparse_data = common_cfg.get('from_sparse_data', True)
+if isinstance(from_sparse_data, str):
+    from_sparse_data = from_sparse_data.lower() in ('true', '1', 'yes')
+aggregate_layers = common_cfg.get('aggregate_layers', False)
+if isinstance(aggregate_layers, str):
+    aggregate_layers = aggregate_layers.lower() in ('true', '1', 'yes')
 
 # Add the project root to the Python path
 sys.path.insert(0, str(project_dir))
@@ -138,25 +299,33 @@ logging.info("Starting Graph Probing Analysis")
 
 
 # -----------------------------
-# Analysis Pipeline Configuration
+# Analysis Pipeline Configuration (from YAML)
 # -----------------------------
-dataset_name = args.dataset_name
-model_name = args.model_name
-ckpt_step = args.ckpt_step
-batch_size = args.batch_size
-layer_id = args.layer_id
-probe_input = args.probe_input
-network_density = args.network_density
-eval_batch_size = args.eval_batch_size
-num_channels = args.num_channels
-num_layers = args.num_layers
-learning_rate = args.learning_rate
-from_sparse_data = args.from_sparse_data
-num_epochs = args.num_epochs
-early_stop_patience = args.early_stop_patience
+if isinstance(layer_list, (list, tuple)):
+    layer_ids = [int(x) for x in layer_list]
+else:
+    layer_ids = [int(x) for x in str(layer_list).replace(',', ' ').split() if x.strip()]
+if not layer_ids:
+    raise ValueError("layer_list must specify at least one layer (e.g., '5' or '5,6')")
+layer_id = layer_ids[0]
 
 # Output directories for interim artifacts
-reports_dir = main_dir / "reports" / "hallucination_analysis"
+# Sanitize model name: replace '/' and '-' with '_'
+model_tag = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+reports_root = main_dir / "reports" / "hallucination_analysis" / model_tag
+reports_root.mkdir(parents=True, exist_ok=True)
+
+# Copy pipeline config into the model folder for provenance
+cfg_src = project_dir / "pipeline_config.yaml"
+try:
+    if cfg_src.exists():
+        shutil.copy2(str(cfg_src), str(reports_root / "pipeline_config.yaml"))
+except Exception:
+    pass
+
+# Layer-specific reports directory
+# Ensure per-layer directory under the model folder
+reports_dir = reports_root / f"layer_{layer_id}"
 reports_dir.mkdir(parents=True, exist_ok=True)
 
 def save_json(path: Path, data: dict):
@@ -202,15 +371,90 @@ def _plot_series(series: list[tuple[float, float]], title: str, ylabel: str, out
 
 step_results = []
 
-# -----------------------------
+# ========================================================================
+# FILE AND FOLDER NAMING CONVENTION DOCUMENTATION
+# ========================================================================
+# This section documents the naming convention for all files, folders,
+# and figures created throughout the analysis pipeline.
+#
+# KEY RULES:
+#   - Model names with '/' and '-' are sanitized by replacing with '_'
+#     Example: "Qwen/Qwen2.5-0.5B" → "Qwen_Qwen2_5_0_5B"
+#   - All special characters in filenames/folder names are replaced with '_'
+#   - No spaces, periods (except extensions), backslashes, or slashes
+#   - dataset_fraction is NOT included in filenames (applied during loading)
+#
+# DIRECTORY STRUCTURE:
+#   {main_dir}/
+#   ├── data/hallucination/
+#   │   ├── {dataset_name}.csv                    [Input dataset file]
+#   │   └── {dataset_name}/{sanitized_model_name}/
+#   │       └── layer_{layer_id}/
+#   │           ├── *_activations.npy            [LLM activations]
+#   │           ├── *_correlations.npy           [Correlation matrices]
+#   │           ├── *_sparse_*_edge_index.npy   [Sparse network edges]
+#   │
+#   ├── reports/hallucination_analysis/{sanitized_model_name}/
+#   │   ├── pipeline_config.yaml                 [Copy of config]
+#   │   └── layer_{layer_id}/
+#   │       ├── step1_construct_dataset.log      [Dataset construction log]
+#   │       ├── step2_compute_network.log        [Network computation log]
+#   │       ├── step3_train.log                  [Probe training log]
+#   │       ├── analysis_summary.json            [Results summary]
+#   │       └── *.png                            [Visualization figures]
+#   │
+#   ├── saves/hallucination/{dataset_name}/{sanitized_model_dir}/
+#   │   └── layer_{layer_id}/
+#   │       └── best_model_density-{DD}_dim-{C}_hop-{L}_input-{T}.pth
+#   │           where: DD=density%, C=channels, L=layers, T=input_type
+#   │
+#   └── runs/hallucination/{dataset_name}/{sanitized_model_dir}/
+#       └── layer_{layer_id}/
+#           └── events.* [TensorBoard event files]
+#
+# FILENAME PATTERNS:
+#   - Network files: *_sparse_*_edge_index.npy, *_correlations.npy
+#   - Model files: best_model_density-05_dim-32_hop-2_input-corr.pth
+#   - Log files: step{N}_{operation}.log
+#   - Figures: train_loss.png, test_metrics.png, fc_*.png
+#
+# VARIABLES IN FILENAMES:
+#   - {dataset_name}: truthfulqa, halueval, medhallu, helm
+#   - {sanitized_model_name}: Original model name with /, - → _
+#     Example: "Qwen/Qwen2.5-0.5B" becomes "Qwen_Qwen2_5_0_5B"
+#   - {layer_id}: Integer layer number (e.g., 5)
+#   - {DD}: Density as 2-digit percentage (e.g., 05 for 0.05)
+#   - {C}: Number of hidden channels (e.g., 32)
+#   - {L}: Number of GNN layers (e.g., 2)
+#   - {T}: Probe input type (corr, activation, etc.)
+#   - {dataset_fraction}: Applied during data loading, NOT in filenames
+#
+# NOTE ON dataset_fraction:
+#   - Values: 0.1 to 1.0 (1.0 = full dataset)
+#   - Applied by RANDOMLY sampling from the full dataset
+#   - Different runs with same fraction may use different subsets
+#   - Sanity checks verify actual size matches expected fraction
+#
+# ========================================================================
+
+# ========================================================================
 # Step 1: Prepare the dataset
-# -----------------------------
+# ========================================================================
 logging.info("\n" + "="*60)
-logging.info("Step 1: Constructing dataset...")
-logging.info(f"  Dataset: {dataset_name}")
-logging.info(f"  Model: {model_name}")
-logging.info(f"  Checkpoint step: {ckpt_step}")
-logging.info(f"  Batch size: {batch_size}")
+logging.info("STEP 1: Constructing Dataset")
+logging.info("="*60)
+logging.info(f"Dataset: {dataset_name}")
+logging.info(f"Model: {model_name} (sanitized: {model_tag})")
+logging.info(f"Checkpoint step: {ckpt_step}")
+logging.info(f"Batch size: {batch_size}")
+logging.info(f"Dataset fraction: {dataset_fraction} (random sample from full dataset)")
+
+# Sanity check: dataset_fraction
+if not (0.1 <= dataset_fraction <= 1.0):
+    logging.error(f"✗ SANITY CHECK FAILED: dataset_fraction must be between 0.1 and 1.0, got {dataset_fraction}")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: dataset_fraction={dataset_fraction} is valid")
+
 logging.info(f"Using Python: {sys.executable}")
 logging.info("Executing construct_dataset.py...")
 step1_log = reports_dir / "step1_construct_dataset.log"
@@ -218,7 +462,9 @@ step_start = time.monotonic()
 result = run(
     [
         python_exe,
-        "hallucination/construct_dataset.py"
+        "hallucination/construct_dataset.py",
+        f"--dataset_name={dataset_name}",
+        f"--dataset_fraction={dataset_fraction}",
     ],
     cwd=project_dir,
     env=env,
@@ -227,40 +473,90 @@ result = run(
 step_duration = time.monotonic() - step_start
 
 if result != 0:
-    logging.error(f"Dataset construction failed with return code {result}")
+    logging.error(f"✗ Dataset construction failed with return code {result}")
     step_results.append({"step": 1, "name": "construct_dataset", "status": "error", "duration_sec": step_duration, "log": str(step1_log)})
 else:
     logging.info("✓ Dataset constructed successfully")
-    logging.info("Dataset is ready for processing")
+    
+    # Sanity checks for dataset
     dataset_path = main_dir / "data/hallucination/truthfulqa.csv"
-    label_plot = reports_dir / "dataset_label_distribution.png"
-    dataset_head = reports_dir / "dataset_head.csv"
-    try:
-        if dataset_path.exists():
+    if not dataset_path.exists():
+        logging.error(f"✗ SANITY CHECK FAILED: Dataset file not found at {dataset_path}")
+        step_results.append({"step": 1, "name": "construct_dataset", "status": "error", "duration_sec": step_duration, "log": str(step1_log)})
+    else:
+        logging.info(f"✓ SANITY CHECK: Dataset file exists at {dataset_path}")
+        
+        try:
             df = pd.read_csv(dataset_path)
-            df.head(20).to_csv(dataset_head, index=False)
+            logging.info(f"✓ SANITY CHECK: Dataset loaded successfully")
+            logging.info(f"  - Total rows: {len(df)}")
+            logging.info(f"  - Columns: {list(df.columns)}")
+            
+            # Check for required columns
+            required_cols = ['label', 'answer']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                logging.error(f"✗ SANITY CHECK FAILED: Missing required columns: {missing_cols}")
+                step_results.append({"step": 1, "name": "construct_dataset", "status": "error", "duration_sec": step_duration, "log": str(step1_log)})
+            else:
+                logging.info(f"✓ SANITY CHECK: All required columns present: {required_cols}")
+            
+            # Check label distribution
             if "label" in df.columns:
                 label_counts = df["label"].value_counts().sort_index()
+                logging.info(f"✓ SANITY CHECK: Label distribution: {dict(label_counts)}")
+                
+                # Check if we have both classes
+                if len(label_counts) < 2:
+                    logging.error(f"✗ SANITY CHECK FAILED: Only {len(label_counts)} class(es) found, expected 2")
+                    step_results.append({"step": 1, "name": "construct_dataset", "status": "error", "duration_sec": step_duration, "log": str(step1_log)})
+                else:
+                    logging.info(f"✓ SANITY CHECK: Both classes present")
+                
+                # Create visualizations
+                label_plot = reports_dir / "dataset_label_distribution.png"
                 label_counts.plot(kind="bar")
-                plt.title("TruthfulQA label distribution")
+                plt.title(f"TruthfulQA label distribution (n={len(df)})")
                 plt.xlabel("label")
                 plt.ylabel("count")
                 plt.tight_layout()
                 plt.savefig(label_plot)
                 plt.close()
-        step_results.append({"step": 1, "name": "construct_dataset", "status": "ok", "duration_sec": step_duration, "log": str(step1_log), "dataset_path": str(dataset_path), "dataset_head": str(dataset_head), "label_plot": str(label_plot)})
-    except Exception as e:
-        logging.warning(f"Could not summarize dataset: {e}")
-        step_results.append({"step": 1, "name": "construct_dataset", "status": "ok", "duration_sec": step_duration, "log": str(step1_log), "dataset_path": str(dataset_path)})
+                logging.info(f"✓ Saved label distribution plot to {label_plot}")
+            
+            # Save dataset head
+            dataset_head = reports_dir / "dataset_head.csv"
+            df.head(20).to_csv(dataset_head, index=False)
+            logging.info(f"✓ Saved dataset head (20 rows) to {dataset_head}")
+            
+            logging.info("✓ Dataset is ready for processing")
+            step_results.append({"step": 1, "name": "construct_dataset", "status": "ok", "duration_sec": step_duration, "log": str(step1_log), "dataset_path": str(dataset_path), "rows": len(df), "classes": len(label_counts) if "label" in df.columns else 0})
+        except Exception as e:
+            logging.error(f"✗ SANITY CHECK FAILED: Could not load/validate dataset: {e}")
+            step_results.append({"step": 1, "name": "construct_dataset", "status": "error", "duration_sec": step_duration, "log": str(step1_log)})
 
 # -----------------------------
 # Step 2: Generate the neural topology
 # -----------------------------
 logging.info("\n" + "="*60)
-logging.info("\nStep 2: Generating neural topology (network graph)...")
-logging.info(f"  Layer ID: {layer_id}")
-logging.info(f"  Network density: {network_density}")
-logging.info(f"  Sparse mode: {from_sparse_data}")
+logging.info("STEP 2: Generating Neural Topology (Network Graph)")
+logging.info("="*60)
+logging.info(f"Layer IDs: {layer_ids}")
+logging.info(f"Network density: {network_density}")
+logging.info(f"Sparse mode: {from_sparse_data}")
+logging.info(f"Dataset fraction: {dataset_fraction}")
+
+# Sanity checks for Step 2
+if not (0.01 <= network_density <= 1.0):
+    logging.error(f"✗ SANITY CHECK FAILED: Network density must be between 0.01 and 1.0, got {network_density}")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: network_density={network_density} is valid")
+
+if not layer_ids:
+    logging.error(f"✗ SANITY CHECK FAILED: No layer IDs specified")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: {len(layer_ids)} layer(s) to process")
+
 logging.info("Executing compute_llm_network.py...")
 step2_log = reports_dir / "step2_compute_network.log"
 step_start = time.monotonic()
@@ -272,11 +568,13 @@ result = run(
         f"--dataset_name={dataset_name}",
         f"--llm_model_name={model_name}",
         f"--ckpt_step={ckpt_step}",
-        f"--llm_layer={layer_id}",
+        *[f"--llm_layer={lid}" for lid in layer_ids],
         f"--batch_size={batch_size}",
         f"--network_density={network_density}",
-        f"--gpu_id={args.gpu_id}",
-    ] + (["--sparse"] if from_sparse_data else []),
+        f"--dataset_fraction={dataset_fraction}",
+        f"--gpu_id={gpu_id}",
+        ] + (["--sparse"] if from_sparse_data else [])
+            + (["--aggregate_layers"] if aggregate_layers else []),
     cwd=project_dir,
     env=env,
     log_file=step2_log,
@@ -284,16 +582,30 @@ result = run(
 step_duration = time.monotonic() - step_start
 
 if result != 0:
-    logging.error(f"Network computation failed with return code {result}")
+    logging.error(f"✗ Network computation failed with return code {result}")
     step_results.append({"step": 2, "name": "compute_network", "status": "error", "duration_sec": step_duration, "log": str(step2_log)})
 else:
-    logging.info("✓ Neural topology (network graph) computed successfully")
-    logging.info("Network topology is ready for probe training")
+    logging.info("✓ Network computation completed")
+    
+    # Sanity checks for network outputs
+    network_base_dir = main_dir / "data" / "hallucination" / model_name / "layer_5"
+    sparse_file_pattern = f"*_sparse_*_edge_index.npy"
+    sparse_files = list(network_base_dir.glob(sparse_file_pattern)) if network_base_dir.exists() else []
+    
+    if sparse_files:
+        logging.info(f"✓ SANITY CHECK: Found {len(sparse_files)} sparse network file(s)")
+    else:
+        logging.warning(f"⚠ SANITY CHECK: No sparse network files found in {network_base_dir}")
+    
+    step_results.append({"step": 2, "name": "compute_network", "status": "ok", "duration_sec": step_duration, "log": str(step2_log), "sparse_files": len(sparse_files)})
+    
+    # Additional summary of network outputs
     try:
+        sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if ckpt_step == -1:
-            model_dir = model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{model_name}_step{ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{ckpt_step}"
         topology_root = main_dir / "data/hallucination/truthfulqa" / model_dir
         num_questions = len([p for p in topology_root.iterdir() if p.is_dir()]) if topology_root.exists() else 0
         # Save example functional connectivity matrices (before/after threshold)
@@ -348,20 +660,44 @@ else:
         logging.warning(f"Could not summarize network outputs: {e}")
         step_results.append({"step": 2, "name": "compute_network", "status": "ok", "duration_sec": step_duration, "log": str(step2_log)})
 
-# -----------------------------
+# ========================================================================
 # Step 3: Train the probes
-# -----------------------------
+# ========================================================================
 logging.info("\n" + "="*60)
-logging.info("\nStep 3: Training graph neural network probes...")
-logging.info(f"  Probe input: {probe_input}")
-logging.info(f"  Density: {network_density}")
-logging.info(f"  Num channels: {num_channels}")
-logging.info(f"  Num layers: {num_layers}")
-logging.info(f"  Learning rate: {learning_rate}")
-logging.info(f"  Batch size: {batch_size}")
-logging.info(f"  Eval batch size: {eval_batch_size}")
+logging.info("STEP 3: Training Graph Neural Network Probes")
+logging.info("="*60)
+logging.info(f"Probe input: {probe_input}")
+logging.info(f"Density: {network_density}")
+logging.info(f"Num channels: {num_channels}")
+logging.info(f"Num layers: {num_layers}")
+logging.info(f"Learning rate: {learning_rate}")
+logging.info(f"Batch size: {batch_size}")
+logging.info(f"Eval batch size: {eval_batch_size}")
+logging.info(f"Num epochs: {num_epochs}")
+logging.info(f"Early stop patience: {early_stop_patience}")
+logging.info(f"Label smoothing: {label_smoothing}")
+logging.info(f"Dataset fraction: {dataset_fraction}")
 logging.info(f"  Num epochs: {num_epochs}")
 logging.info(f"  Early stop patience: {early_stop_patience}")
+logging.info(f"  Label smoothing: {label_smoothing}")
+logging.info(f"  Gradient clipping: {gradient_clip}")
+logging.info(f"  Warmup epochs: {warmup_epochs}")
+
+# Sanity checks for Step 3
+if num_epochs <= 0:
+    logging.error(f"✗ SANITY CHECK FAILED: num_epochs must be > 0, got {num_epochs}")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: num_epochs={num_epochs} is valid")
+
+if learning_rate <= 0:
+    logging.error(f"✗ SANITY CHECK FAILED: learning_rate must be > 0, got {learning_rate}")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: learning_rate={learning_rate} is valid")
+
+if not (0 <= label_smoothing < 1.0):
+    logging.error(f"✗ SANITY CHECK FAILED: label_smoothing must be 0 <= x < 1.0, got {label_smoothing}")
+    sys.exit(1)
+logging.info(f"✓ SANITY CHECK: label_smoothing={label_smoothing} is valid")
 logging.info("Executing train.py...")
 logging.info("This may take a while...")
 step3_log = reports_dir / "step3_train.log"
@@ -384,7 +720,11 @@ result = run(
         f"--lr={learning_rate}",
         f"--num_epochs={num_epochs}",
         f"--early_stop_patience={early_stop_patience}",
-        f"--gpu_id={args.gpu_id}",
+        f"--label_smoothing={label_smoothing}",
+        f"--gradient_clip={gradient_clip}",
+        f"--warmup_epochs={warmup_epochs}",
+        f"--dataset_fraction={dataset_fraction}",
+        f"--gpu_id={gpu_id}",
     ] + (["--from_sparse_data"] if from_sparse_data else []),
     cwd=project_dir,
     env=env,
@@ -393,20 +733,32 @@ result = run(
 step_duration = time.monotonic() - step_start
 
 if result != 0:
-    logging.error(f"Training failed with return code {result}")
+    logging.error(f"✗ Training failed with return code {result}")
     step_results.append({"step": 3, "name": "train", "status": "error", "duration_sec": step_duration, "log": str(step3_log)})
 else:
     logging.info("✓ Probes trained successfully")
+    
+    # Sanity checks for training outputs
+    sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    if ckpt_step == -1:
+        model_dir = sanitized_model_name
+    else:
+        model_dir = f"{sanitized_model_name}_step{ckpt_step}"
+    density_tag = f"{int(round(network_density * 100)):02d}"
+    best_model_path = main_dir / "saves" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{layer_id}" / f"best_model_density-{density_tag}_dim-{num_channels}_hop-{num_layers}_input-{probe_input}.pth"
+    
+    model_size = 0
+    if best_model_path.exists():
+        model_size = best_model_path.stat().st_size
+        logging.info(f"✓ SANITY CHECK: Best model saved at {best_model_path} (size: {model_size/1e6:.2f} MB)")
+    else:
+        logging.warning(f"⚠ SANITY CHECK: Best model file not found at {best_model_path}")
+    
     logging.info("Trained models are ready for evaluation")
     logging.info("\nNote: The FC (functional connectivity) matrix is STATIC and does NOT change during training.")
     logging.info("      It is computed from the LLM's hidden activations. The probe (GCN/MLP) learns to")
     logging.info("      extract hallucination signals from this fixed graph structure.")
-    if ckpt_step == -1:
-        model_dir = model_name
-    else:
-        model_dir = f"{model_name}_step{ckpt_step}"
-    best_model_path = main_dir / "saves" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{layer_id}" / f"best_model_density-{network_density}_dim-{num_channels}_hop-{num_layers}_input-{probe_input}.pth"
-    model_size = best_model_path.stat().st_size if best_model_path.exists() else 0
+    
     # TensorBoard scalars
     tb_dir = main_dir / "runs" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{layer_id}"
     loss_plot = reports_dir / "train_loss.png"
@@ -414,6 +766,7 @@ else:
     try:
         event_files = sorted(tb_dir.glob("events.*"), key=lambda p: p.stat().st_mtime, reverse=True)
         if event_files:
+            logging.info(f"✓ SANITY CHECK: TensorBoard event files found in {tb_dir}")
             ea = event_accumulator.EventAccumulator(str(event_files[0]))
             ea.Reload()
             if "train/loss" in ea.Tags().get("scalars", []):
@@ -472,7 +825,7 @@ result = run(
         f"--probe_input={probe_input}",
         f"--density={network_density}",
         f"--num_layers={num_layers}",
-        f"--gpu_id={args.gpu_id}",
+        f"--gpu_id={gpu_id}",
     ],
     cwd=project_dir,
     env=env,
@@ -493,36 +846,41 @@ else:
 # -----------------------------
 logging.info("\n" + "="*60)
 logging.info("\nStep 5: Computing graph statistics...")
-logging.info(f"  Layer ID: {layer_id}")
+logging.info(f"  Layers to analyze: {layer_ids}")
 logging.info(f"  Network density: {network_density}")
-logging.info("Executing graph_analysis.py...")
-step5_log = reports_dir / "step5_graph_analysis.log"
-step_start = time.monotonic()
-result = run(
-    [
-        python_exe,
-        "-m",
-        "hallucination.graph_analysis",
-        f"--llm_model_name={model_name}",
-        f"--ckpt_step={ckpt_step}",
-        f"--layer={layer_id}",
-        f"--feature={probe_input}",
-    ],
-    cwd=project_dir,
-    env=env,
-    log_file=step5_log,
-)
-step_duration = time.monotonic() - step_start
+layers_completed: list[int] = []
+for lid in layer_ids:
+    logging.info(f"Executing graph_analysis.py for layer {lid}...")
+    lid_reports_dir = reports_root / f"layer_{lid}"
+    lid_reports_dir.mkdir(parents=True, exist_ok=True)
+    step5_log = lid_reports_dir / "step5_graph_analysis.log"
+    step_start = time.monotonic()
+    result = run(
+        [
+            python_exe,
+            "-m",
+            "hallucination.graph_analysis",
+            f"--llm_model_name={model_name}",
+            f"--ckpt_step={ckpt_step}",
+            f"--layer={lid}",
+            f"--feature={probe_input}",
+        ],
+        cwd=project_dir,
+        env=env,
+        log_file=step5_log,
+    )
+    step_duration = time.monotonic() - step_start
 
-if result != 0:
-    logging.error(f"Graph analysis failed with return code {result}")
-    step_results.append({"step": 5, "name": "graph_analysis", "status": "error", "duration_sec": step_duration, "log": str(step5_log)})
-else:
-    logging.info("✓ Graph analysis completed successfully")
+    if result != 0:
+        logging.error(f"Graph analysis failed for layer {lid} with return code {result}")
+        step_results.append({"step": 5, "layer": lid, "name": "graph_analysis", "status": "error", "duration_sec": step_duration, "log": str(step5_log)})
+        continue
+
+    logging.info(f"✓ Graph analysis completed successfully for layer {lid}")
     logging.info("Graph analysis results are ready")
-    npy_file = project_dir / f"{model_name}_layer_{layer_id}_{probe_input}_intra_vs_inter.npy"
-    hist_path = reports_dir / "intra_vs_inter_hist.png"
-    summary_csv = reports_dir / "intra_vs_inter_summary.csv"
+    npy_file = lid_reports_dir / f"{model_tag}_layer_{lid}_{probe_input}_intra_vs_inter.npy"
+    hist_path = lid_reports_dir / "intra_vs_inter_hist.png"
+    summary_csv = lid_reports_dir / "intra_vs_inter_summary.csv"
     try:
         if npy_file.exists():
             data = np.load(npy_file, allow_pickle=True)
@@ -543,19 +901,20 @@ else:
                     "median": float(np.median(data)),
                 }
                 pd.DataFrame([stats]).to_csv(summary_csv, index=False)
-                step_results.append({"step": 5, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "npy_file": str(npy_file), "histogram": str(hist_path), "summary_csv": str(summary_csv), "stats": stats})
+                step_results.append({"step": 5, "layer": lid, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "npy_file": str(npy_file), "histogram": str(hist_path), "summary_csv": str(summary_csv), "stats": stats})
             else:
-                step_results.append({"step": 5, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "npy_file": str(npy_file), "note": "empty data"})
+                step_results.append({"step": 5, "layer": lid, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "npy_file": str(npy_file), "note": "empty data"})
         else:
-            step_results.append({"step": 5, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "note": "npy file not found"})
+            step_results.append({"step": 5, "layer": lid, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log), "note": "npy file not found"})
     except Exception as e:
-        logging.warning(f"Could not summarize graph analysis outputs: {e}")
-        step_results.append({"step": 5, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log)})
+        logging.warning(f"Could not summarize graph analysis outputs for layer {lid}: {e}")
+        step_results.append({"step": 5, "layer": lid, "name": "graph_analysis", "status": "ok", "duration_sec": step_duration, "log": str(step5_log)})
+    layers_completed.append(lid)
 
 # -----------------------------
 # Persist summary and quick visuals
 # -----------------------------
-summary_json = reports_dir / "summary.json"
+summary_json = reports_root / "summary.json"
 try:
     durations = [(r.get("name"), r.get("duration_sec", 0.0)) for r in step_results if "duration_sec" in r]
     if durations:
@@ -564,7 +923,7 @@ try:
         plt.xlabel("seconds")
         plt.title("Step durations")
         plt.tight_layout()
-        plt.savefig(reports_dir / "step_durations.png")
+        plt.savefig(reports_root / "step_durations.png")
         plt.close()
     save_json(summary_json, {"steps": step_results})
 except Exception as e:
@@ -576,7 +935,7 @@ logging.info("="*60)
 logging.info("Summary:")
 logging.info(f"  - Dataset: {dataset_name}")
 logging.info(f"  - Model: {model_name}")
-logging.info(f"  - Layer analyzed: {layer_id}")
+logging.info(f"  - Layers analyzed: {', '.join(str(x) for x in layer_ids)}")
 logging.info(f"  - Probe input type: {probe_input}")
 logging.info("All steps completed successfully!")
-logging.info(f"Reports saved to: {reports_dir}")
+logging.info(f"Reports saved under: {reports_root}")

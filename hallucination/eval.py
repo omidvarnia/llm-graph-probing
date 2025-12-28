@@ -59,10 +59,11 @@ def main(_):
         assert FLAGS.num_layers == 0, "Constant baseline requires num_layers=0."
         logging.info(f"Using constant baseline with label={FLAGS.baseline_label}")
 
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
     
     logging.info(f"Dataset: {FLAGS.dataset_name}")
@@ -130,7 +131,8 @@ def main(_):
     logging.info(f"Test samples: {len(test_loader.dataset)}")
 
     if not FLAGS.use_constant_baseline:
-        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+        density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
         logging.info(f"\nLoading model from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 

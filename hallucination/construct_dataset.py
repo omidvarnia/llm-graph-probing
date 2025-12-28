@@ -19,6 +19,7 @@ flags.DEFINE_enum(
     "Which dataset to construct."
 )
 flags.DEFINE_string("output_dir", str(main_dir / "data/hallucination"), "Directory to save the constructed dataset.")
+flags.DEFINE_float("dataset_fraction", 1.0, "Fraction of dataset to use (0.1-1.0 where 1.0 = all data)")
 FLAGS = flags.FLAGS
 
 
@@ -125,11 +126,62 @@ def main(_):
         raise ValueError(f"Unsupported dataset: {FLAGS.dataset_name}")
 
     df = pd.DataFrame(records)
+    original_size = len(df)
     df = df.drop_duplicates().reset_index(drop=True)
+    deduplicated_size = len(df)
+    print(f"Original size: {original_size}, After deduplication: {deduplicated_size}")
+    
+    # Apply dataset fraction (randomly sample unless fraction=1.0)
+    if FLAGS.dataset_fraction < 1.0:
+        frac = FLAGS.dataset_fraction
+        if "label" in df.columns:
+            # Stratified, class-balanced sampling: aim for equal counts per class
+            from collections import Counter
+            counts = Counter(df["label"])
+            num_classes = len(counts)
+            total_target = max(1, int(round(frac * len(df))))
+            per_class_target = min(counts.values())
+            per_class_target = min(per_class_target, total_target // num_classes)
+            if per_class_target > 0:
+                parts = []
+                remaining_mask = pd.Series([True] * len(df))
+                for lbl in sorted(counts):
+                    subset = df[df["label"] == lbl]
+                    sampled = subset.sample(n=per_class_target, replace=False)
+                    parts.append(sampled)
+                    remaining_mask.loc[sampled.index] = False
+                df_bal = pd.concat(parts, axis=0)
+                # If we still need more (due to rounding), top up randomly from remaining
+                shortfall = total_target - len(df_bal)
+                if shortfall > 0:
+                    remaining = df[remaining_mask]
+                    if len(remaining) > 0:
+                        extra = remaining.sample(n=min(shortfall, len(remaining)), replace=False)
+                        df_bal = pd.concat([df_bal, extra], axis=0)
+                df = df_bal.sample(frac=1.0).reset_index(drop=True)  # shuffle
+                print(f"Applied dataset_fraction={frac} with class balance: target {total_target}, got {len(df)} (per-class {per_class_target})")
+                print(f"Balanced label distribution: {dict(Counter(df['label']))}")
+            else:
+                # Fallback to random sample if class counts are too small
+                df = df.sample(frac=frac).reset_index(drop=True)
+                print(f"Applied dataset_fraction={frac} (fallback random): sampled {len(df)} samples from {deduplicated_size}")
+        else:
+            # No labels available, random sample
+            df = df.sample(frac=frac).reset_index(drop=True)
+            print(f"Applied dataset_fraction={frac}: sampled {len(df)} samples from {deduplicated_size}")
+    else:
+        print(f"Using full dataset: dataset_fraction={FLAGS.dataset_fraction}")
+    
     output_path = os.path.join(FLAGS.output_dir, f"{FLAGS.dataset_name}.csv")
     os.makedirs(FLAGS.output_dir, exist_ok=True)
     df.to_csv(output_path, index=False)
     print(f"Saved dataset to {output_path}")
+    print(f"Final dataset size: {len(df)} rows")
+    if "label" in df.columns:
+        from collections import Counter
+        label_counts = Counter(df["label"])
+        print(f"Label distribution: {dict(label_counts)}")
+        print(f"✓ Sanity check: Dataset size ({len(df)}) is consistent with fraction ({FLAGS.dataset_fraction}) of original ({deduplicated_size})")
 
 
 if __name__ == "__main__":

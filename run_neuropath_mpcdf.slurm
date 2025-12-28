@@ -24,62 +24,27 @@ export HIP_VISIBLE_DEVICES="${SLURM_JOB_GPUS}"
 set -euo pipefail
 
 # =============================================================================
-# Configuration Parameters (modify as needed)
-# =============================================================================
-# Load parameters from YAML (sets variables if present)
-eval "$( ${PYTHON} ${PROJECT_DIR}/utils/load_params.py --config ${PROJECT_DIR}/pipeline_config.yaml --pipeline neuropathology )"
-
-# Fallback defaults only if not provided via YAML
-DATASET_NAME=${DATASET_NAME:-truthfulqa}
-MODEL_NAME=${MODEL_NAME:-gpt2}
-CKPT_STEP=${CKPT_STEP:- -1}
-LAYER_ID=${LAYER_ID:-5}
-DENSITY=${DENSITY:-0.10}
-NUM_LAYERS=${NUM_LAYERS:-4}
-HIDDEN_CHANNELS=${HIDDEN_CHANNELS:-64}
-GPU_ID=${GPU_ID:-0}
-FROM_SPARSE_DATA=${FROM_SPARSE_DATA:-true}
-EARLY_STOP_PATIENCE=${EARLY_STOP_PATIENCE:-15}
-DISEASE_PATTERN=${DISEASE_PATTERN:-epilepsy_like}
-NUM_CLUSTERS=${NUM_CLUSTERS:-8}
-WITHIN_SCALE=${WITHIN_SCALE:-1.2}
-BETWEEN_SCALE=${BETWEEN_SCALE:-0.7}
-REWIRING_PROB=${REWIRING_PROB:-0.15}
-DISTANCE_THRESHOLD=${DISTANCE_THRESHOLD:-}
-
-# Dataset and Model Configuration
-DATASET_NAME="truthfulqa"         # Dataset: truthfulqa, halueval, medhallu, helm
-MODEL_NAME="gpt2"                 # Model: gpt2, gpt2-medium, gpt2-large, pythia-160m, etc.
-CKPT_STEP=-1                      # Checkpoint step (-1 for main checkpoint)
-LAYER_ID=5                        # LLM layer to analyze
-
-# Network and Probe Configuration
-DENSITY=0.10                      # Network density (0.01 to 1.0) - increased from 0.05 for better signal
-NUM_LAYERS=4                      # Number of GNN layers - increased from 3 for more capacity
-HIDDEN_CHANNELS=64                # Hidden channels in GNN - increased from 32 for better representation
-GPU_ID=0                          # GPU ID to use
-FROM_SPARSE_DATA="--from_sparse_data"  # Use sparse data (remove to disable)
-EARLY_STOP_PATIENCE=15            # Early stopping patience (epochs without improvement)
-
-# Disease Pattern Configuration
-DISEASE_PATTERN="epilepsy_like"   # Disease preset: epilepsy_like, dementia_like, autism_like
-NUM_CLUSTERS=8                    # Number of functional modules
-WITHIN_SCALE=1.2                  # Scale factor for within-module correlations (>1 increases segregation) - reduced from 1.3
-BETWEEN_SCALE=0.7                 # Scale factor for between-module correlations (<1 decreases aggregation) - increased from 0.5 for gentler reduction
-REWIRING_PROB=0.15                # Edge rewiring probability to reduce small-worldness
-DISTANCE_THRESHOLD=""             # Index distance threshold for aggregation decrease - disabled to avoid double scaling
-
-# Append density level to disease tag (without dot) for folder naming
-DENSITY_STR="${DENSITY//./}"
-DISEASE_PATTERN="${DISEASE_PATTERN}_d${DENSITY_STR}"
-
-# =============================================================================
 # Paths (usually don't need to change these)
 # =============================================================================
-PROJECT_DIR=/u/aomidvarnia/GIT_repositories/llm-graph-probing
-MAIN_DIR=/ptmp/aomidvarnia/analysis_results/llm_graph
+CONFIG_FILE=/u/aomidvarnia/GIT_repositories/llm-graph-probing/pipeline_config_qwen.yaml
 ENV_PATH=/ptmp/aomidvarnia/uv_envs/llm_graph
 PYTHON=${ENV_PATH}/bin/python
+
+# Derive project_dir and main_dir from config (with defaults)
+PROJECT_DIR=$(${PYTHON} - <<PY
+import yaml
+cfg = yaml.safe_load(open("${CONFIG_FILE}", "r"))
+common = cfg.get("common", {}) if cfg else {}
+print(common.get("project_dir", "/u/aomidvarnia/GIT_repositories/llm-graph-probing"))
+PY
+)
+MAIN_DIR=$(${PYTHON} - <<PY
+import yaml
+cfg = yaml.safe_load(open("${CONFIG_FILE}", "r"))
+common = cfg.get("common", {}) if cfg else {}
+print(common.get("main_dir", "/ptmp/aomidvarnia/analysis_results/llm_graph"))
+PY
+)
 
 # Create log directory
 mkdir -p ${MAIN_DIR}/slurm_logs
@@ -91,38 +56,107 @@ source "${ENV_PATH}/bin/activate"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export MAIN_DIR="${MAIN_DIR}"
 
-# Run neuropathology analysis
-${PYTHON} ${PROJECT_DIR}/my_analysis/neuropathology_analysis.py \
-  --main_dir ${MAIN_DIR} \
-  --project_dir ${PROJECT_DIR} \
-  --dataset_name ${DATASET_NAME} \
-  --llm_model_name ${MODEL_NAME} \
-  --ckpt_step ${CKPT_STEP} \
-  --llm_layer ${LAYER_ID} \
-  --density ${DENSITY} \
-  --num_layers ${NUM_LAYERS} \
-  --hidden_channels ${HIDDEN_CHANNELS} \
-  --gpu_id ${GPU_ID} \
-  --early_stop_patience ${EARLY_STOP_PATIENCE} \
-  --disease_pattern ${DISEASE_PATTERN} \
-  --num_clusters ${NUM_CLUSTERS} \
-  --within_scale ${WITHIN_SCALE} \
-  --between_scale ${BETWEEN_SCALE} \
-  --rewiring_prob ${REWIRING_PROB} \
-  $([ -n "${DISTANCE_THRESHOLD}" ] && echo "--distance_threshold ${DISTANCE_THRESHOLD}" || echo "") \
-  $([ "${FROM_SPARSE_DATA}" = "true" ] && echo "--from_sparse_data" || echo "")
+# =============================================================================
+# Configuration Parameters (modify as needed)
+# =============================================================================
+# Configuration file path (main input to the pipeline)
+# Already set above as CONFIG_FILE
+
+# Primary layer for analysis (from config)
+PRIMARY_LAYER=5  # Will be extracted from config by the Python script
+
+# Record start time for duration calculation
+JOB_START_TIME=$(date +%s)
+
+# Log all input parameters
+echo ""
+echo "============================================================"
+echo "NEUROPATHOLOGY ANALYSIS - JOB PARAMETERS"
+echo "============================================================"
+echo "SLURM Job ID: ${SLURM_JOB_ID}"
+echo "SLURM Job Name: ${SLURM_JOB_NAME}"
+echo "Job Submission Time: $(date)"
+echo ""
+echo "--- Configuration ---"
+echo "Config File: ${CONFIG_FILE}"
+echo ""
+echo "--- Paths and Environment ---"
+echo "Project Directory: ${PROJECT_DIR}"
+echo "Main Directory: ${MAIN_DIR}"
+echo "Python Executable: ${PYTHON}"
+echo "PYTHONPATH: ${PYTHONPATH}"
+echo ""
+echo "--- GPU Configuration ---"
+echo "GPU(s) Allocated: ${SLURM_JOB_GPUS}"
+echo "CPUs per Task: ${SLURM_CPUS_PER_TASK}"
+echo "Memory: $(sinfo -N -n $(hostname) -o '%m')"
+
+# Log file and folder naming conventions for neuropathology
+echo "FILE & FOLDER NAMING CONVENTIONS (NEUROPATHOLOGY ANALYSIS):"
+echo "=============================================================================="
+echo ""
+echo "1. MODEL NAME SANITIZATION:"
+echo "   - Input:  'Qwen/Qwen2.5-0.5B'"
+echo "   - Output: 'Qwen_Qwen2_5_0_5B'"
+echo "   - Rule: Replace '/' and '-' with '_'"
+echo ""
+echo "2. DIRECTORY STRUCTURE:"
+echo "   \${MAIN_DIR}/reports/neuropathology_analysis/{model_tag}/"
+echo "   └── {disease_pattern}_d{density}/"
+echo "       └── layer_{layer_id}/"
+echo "           ├── N1_construct_dataset.log"
+echo "           ├── N2_compute_network.log"
+echo "           ├── N3_train_probe.log (healthy)"
+echo "           ├── N4_neuropathology_connectivity.log"
+echo "           ├── N5_neuropathology_eval.log"
+echo "           ├── N6_neuropathology_graph_metrics.log"
+echo "           ├── summary.json"
+echo "           ├── fc_healthy_layer_{layer_id}.npy"
+echo "           ├── fc_patho_{disease_pattern}_layer_{layer_id}.npy"
+echo "           ├── probe_performance_healthy.json"
+echo "           ├── probe_performance_patho.json"
+echo "           ├── metrics_summary_layer_{layer_id}.json"
+echo "           └── tensorboard/"
+echo ""
+echo "3. DISEASE PATTERN NAMING:"
+echo "   - Format: {disease_pattern}_d{density_without_dot}"
+echo "   - Examples:"
+echo "     * epilepsy_like_d01     (density=0.1)"
+echo "     * parkinson_like_d05    (density=0.5)"
+echo "     * epilepsy_like_d10     (density=1.0)"
+echo ""
+echo "4. PATHOLOGICAL FC FILENAMES:"
+echo "   - Format: fc_patho_{disease_pattern}_layer_{layer_id}.npy"
+echo "   - Example: fc_patho_epilepsy_like_layer_5.npy"
+echo ""
+echo "5. PERFORMANCE METRICS:"
+echo "   - Healthy probe on healthy FC: probe_performance_healthy.json"
+echo "   - Healthy probe on pathological FC: probe_performance_patho.json"
+echo ""
+echo "6. GRAPH METRICS:"
+echo "   - Filename: metrics_summary_layer_{layer_id}.json"
+echo "   - Contains: clustering_coeff, degree_dist, path_length, etc."
+echo "   - For both healthy and pathological networks"
+echo ""
+echo "EXAMPLE OUTPUT PATHS:"
+echo "/ptmp/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/"
+echo "  Qwen_Qwen2_5_0_5B/"
+echo "  epilepsy_like_d01/"
+echo "  layer_5/"
+echo "  fc_healthy_layer_5.npy"
+echo "  fc_patho_epilepsy_like_layer_5.npy"
+echo "  metrics_summary_layer_5.json"
+echo ""
+echo "=============================================================================="
+echo ""
 
 echo ""
 echo "============================================================"
-echo "Neuropathology analysis completed successfully!"
-echo "============================================================"
-echo "Dataset: ${DATASET_NAME}"
-echo "Model: ${MODEL_NAME}"
-echo "Layer: ${LAYER_ID}"
-echo "Disease pattern: ${DISEASE_PATTERN}"
-echo "Network density: ${DENSITY}"
-echo "Results saved to: ${MAIN_DIR}/reports/neuropathology_analysis/${DISEASE_PATTERN}/"
-echo "============================================================"
+echo ""
+
+echo "Running neuropathology analysis..."
+${PYTHON} ${PROJECT_DIR}/my_analysis/neuropathology_analysis.py \
+  --config ${CONFIG_FILE}
 
 
 

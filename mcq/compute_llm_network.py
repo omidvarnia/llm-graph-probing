@@ -95,7 +95,11 @@ def run_llm(
                 is_correct = (llm_predictions == np.array(batch_answers)).astype(int)
 
                 batch_hidden_states = torch.stack(model_output.hidden_states[1:]).cpu().numpy()
-                batch_hidden_states = batch_hidden_states[layer_list]
+                num_layers_avail = batch_hidden_states.shape[0]
+                zero_based = [int(l) for l in layer_list if 0 <= int(l) < num_layers_avail]
+                if not zero_based:
+                    zero_based = [num_layers_avail - 1]
+                batch_hidden_states = batch_hidden_states[zero_based]
                 if random:
                     batch_hidden_states = np.random.rand(*batch_hidden_states.shape)
                 
@@ -130,6 +134,7 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         np.save(f"{p_dir_name}/layer_{layer_idx}_corr.npy", corr)
                     else:
                         percentile_threshold = network_density * 100
+                        density_tag = f"{int(round(network_density * 100)):02d}"
                         threshold = np.percentile(np.abs(corr), 100 - percentile_threshold)
                         corr[np.abs(corr) < threshold] = 0
                         np.fill_diagonal(corr, 1.0)
@@ -137,8 +142,8 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         edge_index, edge_attr = dense_to_sparse(corr)
                         edge_index = edge_index.numpy()
                         edge_attr = edge_attr.numpy()
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{network_density}_edge_index.npy", edge_index)
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{network_density}_edge_attr.npy", edge_attr)
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_index.npy", edge_index)
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_attr.npy", edge_attr)
                     
                     activation = sentence_hidden_states[:, -1]
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation.npy", activation)

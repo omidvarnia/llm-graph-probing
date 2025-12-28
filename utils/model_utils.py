@@ -8,7 +8,8 @@ def get_num_nodes(llm_model_name, llm_layer, linear_probe_input=None):
     if linear_probe_input in {"word2vec_token_count", "perplexity"}:
         return 1
 
-    hf_model_name = hf_model_name_map[llm_model_name]
+    # Allow either alias (mapped via hf_model_name_map) or direct HF ID
+    hf_model_name = hf_model_name_map.get(llm_model_name, llm_model_name)
     if hf_model_name in [*QWEN_MODELS, *PYTHIA_MODELS]:
         config = AutoConfig.from_pretrained(hf_model_name)
         if llm_layer == -1:
@@ -34,17 +35,32 @@ def load_tokenizer_and_model(model_name, ckpt_step, gpu_id):
         padding_side = "right"
     else:
         padding_side = "left"
-    if gpu_id == -1:
-        device_map = "cpu"
-    else:
-        device_map = f"cuda:{gpu_id}"
-
+    
+    # For ROCm/HIP compatibility: load on CPU first, then move to GPU if needed
     if ckpt_step == -1:
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side=padding_side)
-        model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device_map)
+        if gpu_id == -1:
+            model = AutoModelForCausalLM.from_pretrained(model_name, device_map="cpu")
+        else:
+            # Load on CPU first, then move to specific GPU
+            model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto", max_memory={gpu_id: "40GB", "cpu": "100GB"})
     else:
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side=padding_side, revision=f'step{ckpt_step}')
-        model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map=device_map)
+        if gpu_id == -1:
+            model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map="cpu")
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_name, revision=f'step{ckpt_step}', device_map="auto", max_memory={gpu_id: "40GB", "cpu": "100GB"})
+
+    # Disable sliding-window attention to avoid unsupported SDPA warnings/paths
+    cfg = model.config
+    if hasattr(cfg, "use_sliding_window"):
+        cfg.use_sliding_window = False
+    if hasattr(cfg, "sliding_window"):
+        cfg.sliding_window = None
+    # Some configs keep attention settings in a dict
+    if hasattr(cfg, "attention_config") and isinstance(cfg.attention_config, dict):
+        cfg.attention_config.pop("sliding_window", None)
+        cfg.attention_config.pop("use_sliding_window", None)
     return tokenizer, model
 
 

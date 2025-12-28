@@ -131,10 +131,11 @@ def main(_):
     logging.info("Neuropathology Graph Metrics (healthy vs pathological)")
     logging.info("="*60)
 
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name / model_dir
     reports_dir = main_dir / "reports" / "neuropathology_analysis" / FLAGS.disease_pattern
     os.makedirs(reports_dir, exist_ok=True)

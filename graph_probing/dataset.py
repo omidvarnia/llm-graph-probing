@@ -47,8 +47,9 @@ def wrap_data(path, network_id, llm_layer, target_value, network_density, from_s
         edge_index_llm, edge_attr_llm = dense_to_sparse(llm_brain_network)
         num_nodes = llm_brain_network.shape[0]
     else:
-        edge_index_llm = np.load(os.path.join(path, f"{network_id}/layer_{llm_layer}_sparse_{network_density}_edge_index.npy"))
-        edge_attr_llm = np.load(os.path.join(path, f"{network_id}/layer_{llm_layer}_sparse_{network_density}_edge_attr.npy")).astype(np.float32)
+        density_tag = f"{int(round(network_density * 100)):02d}"
+        edge_index_llm = np.load(os.path.join(path, f"{network_id}/layer_{llm_layer}_sparse_{density_tag}_edge_index.npy"))
+        edge_attr_llm = np.load(os.path.join(path, f"{network_id}/layer_{llm_layer}_sparse_{density_tag}_edge_attr.npy")).astype(np.float32)
         num_nodes = edge_index_llm.max() + 1
         edge_index_llm = torch.from_numpy(edge_index_llm)
         edge_attr_llm = torch.from_numpy(edge_attr_llm)

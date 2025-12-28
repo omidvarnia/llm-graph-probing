@@ -188,8 +188,9 @@ def _save_sparse_graph(C: np.ndarray, out_dir: Path, llm_layer: int, density: fl
     edge_index, edge_attr = dense_to_sparse(torch.from_numpy(adj))
     edge_index = edge_index.numpy()
     edge_attr = edge_attr.numpy()
-    np.save(out_dir / f"layer_{llm_layer}_sparse_{density}_patho_{disease_name}_edge_index.npy", edge_index)
-    np.save(out_dir / f"layer_{llm_layer}_sparse_{density}_patho_{disease_name}_edge_attr.npy", edge_attr)
+    density_tag = f"{int(round(density * 100)):02d}"
+    np.save(out_dir / f"layer_{llm_layer}_sparse_{density_tag}_patho_{disease_name}_edge_index.npy", edge_index)
+    np.save(out_dir / f"layer_{llm_layer}_sparse_{density_tag}_patho_{disease_name}_edge_attr.npy", edge_attr)
 
 
 def _load_all_corr_paths(dataset_dir: Path, llm_layer: int) -> Dict[int, Path]:
@@ -208,10 +209,11 @@ def main(_):
     logging.info("="*60)
 
     # Resolve paths
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     dataset_dir = main_dir / "data/hallucination" / FLAGS.dataset_name / model_dir
     reports_dir = main_dir / "reports" / "neuropathology_analysis" / FLAGS.disease_pattern
     os.makedirs(reports_dir, exist_ok=True)

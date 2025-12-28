@@ -1,0 +1,74 @@
+# -----------------------------------------------------------------------------
+# Model options (set model_name to one of these). Use valid Hugging Face IDs.
+#
+# GPT-2 family (HF IDs):
+#   - gpt2
+#   - gpt2-medium
+#   - gpt2-large
+#
+# Pythia family (HF IDs):
+#   - EleutherAI/pythia-160m
+#   - EleutherAI/pythia-410m
+#   - EleutherAI/pythia-1.4b
+#   - EleutherAI/pythia-2.8b
+#   - EleutherAI/pythia-6.9b
+#   - EleutherAI/pythia-12b
+#
+# Qwen base models (HF IDs):
+#   - Qwen/Qwen1.5-0.5B
+#   - Qwen/Qwen2-0.5B
+#   - Qwen/Qwen2.5-0.5B
+#   - Qwen/Qwen2.5-1.5B
+#   - Qwen/Qwen2.5-3B
+#   - Qwen/Qwen2.5-7B
+#   - Qwen/Qwen2.5-14B
+#
+# Qwen instruct/chat models (HF IDs):
+#   - Qwen/Qwen2.5-0.5B-Instruct
+#   - Qwen/Qwen2.5-1.5B-Instruct
+#   - Qwen/Qwen2.5-3B-Instruct
+#   - Qwen/Qwen2.5-7B-Instruct
+#   - Qwen/Qwen2.5-14B-Instruct
+#
+# Notes:
+# - A "valid Hugging Face ID" is the exact repository name (org/model) that
+#   can be passed to Transformers' AutoTokenizer/AutoModelForCausalLM.
+# - You can set model_name directly to any HF ID above. GPT-2 names are already valid IDs.
+# - For new models, either set model_name to the HF ID, or add an alias mapping
+#   in utils/constants.py:hf_model_name_map if you prefer short names.
+# - Chat models are auto-wrapped with chat templates when applicable.
+# -----------------------------------------------------------------------------
+
+common:
+  dataset_name: truthfulqa              # Dataset name (truthfulqa, halueval, medhallu, helm)
+  model_name: Qwen/Qwen2.5-0.5B    # Hugging Face model ID to load
+  ckpt_step: -1                         # Checkpoint step (-1 uses main checkpoint)
+  layer_list: 5,6,7,8,9,10,11        # Layers to process; first entry is primary for train/eval
+  density: 0.05                         # Network density threshold (0.0-1.0) for FC sparsification
+  dataset_fraction: 0.1                 # Fraction of dataset to use (0.1-1.0 where 1.0 = all data)
+  num_layers: 2                         # GNN depth
+  hidden_channels: 32                   # GNN hidden size
+  gpu_id: 0                             # GPU index to use
+  from_sparse_data: true                # Expect sparse FC inputs
+  early_stop_patience: 20               # Early stopping patience (epochs)
+  aggregate_layers: false               # Also save combined FC across provided layers
+  project_dir: /u/aomidvarnia/GIT_repositories/llm-graph-probing  # Root of this repo
+  main_dir: /ptmp/aomidvarnia/analysis_results/llm_graph          # Root output directory
+
+hallucination:
+  batch_size: 16                        # LLM forward batch size
+  probe_input: corr                     # Probe input type: corr or activation
+  eval_batch_size: 32                   # Eval batch size for probe
+  learning_rate: 0.001                  # Probe optimizer learning rate (was 0.00001, increased for stability)
+  num_epochs: 100                       # Max probe training epochs
+  label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
+  gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)
+  warmup_epochs: 5                      # Number of warmup epochs for learning rate scheduler
+
+neuropathology:
+  disease_pattern: epilepsy_like        # Disease preset (epilepsy_like, dementia_like, autism_like)
+  num_clusters: 8                       # Number of functional modules
+  within_scale: 1.2                     # Within-module correlation scaling (>1 increases segregation)
+  between_scale: 0.7                    # Between-module correlation scaling (<1 increases integration loss)
+  rewiring_prob: 0.15                   # Edge rewiring probability
+  distance_threshold: null              # Optional index-distance threshold for attenuation (null disables)

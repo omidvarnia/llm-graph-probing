@@ -40,10 +40,11 @@ class TruthfulQADataset(Dataset):
         self.in_memory = in_memory
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
 
         if self.in_memory:
@@ -68,8 +69,9 @@ class TruthfulQADataset(Dataset):
             edge_index, edge_attr = dense_to_sparse(adj)
             num_nodes = adj.shape[0]
         else:
-            edge_index = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{self.network_density}_edge_index.npy"))).long()
-            edge_attr = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{self.network_density}_edge_attr.npy"))).float()
+            density_tag = f"{int(round(self.network_density * 100)):02d}"
+            edge_index = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy"))).long()
+            edge_attr = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy"))).float()
             num_nodes = edge_index.max().item() + 1
 
         y = torch.from_numpy(np.load(os.path.join(data_path, "label.npy"))).long()
@@ -114,10 +116,11 @@ class TruthfulQALinearDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
@@ -189,10 +192,11 @@ class TruthfulQACCSDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = os.path.join("data/hallucination", self.dataset_name, model_dir)
 
         self.loaded_data = []

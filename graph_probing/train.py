@@ -69,7 +69,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     logging.info(f"Number of epochs: {FLAGS.num_epochs}")
     logging.info(f"Batch size: {FLAGS.batch_size}")
     
-    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+    density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
 
     best_metrics = {
@@ -275,9 +276,10 @@ def main(_):
     )
 
     if FLAGS.resume:
+        density_tag = f"{int(round(FLAGS.density * 100)):02d}"
         model_save_path = os.path.join(
             main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}",
-            f"best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+            f"best_model_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
         )
         model.load_state_dict(torch.load(model_save_path, map_location=device, weights_only=True))
     train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device)

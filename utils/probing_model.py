@@ -27,8 +27,11 @@ class GCNProbe(nn.Module):
         super(GCNProbe, self).__init__()
         self.embedding = Embedding(num_nodes, hidden_channels)
         self.convs = nn.ModuleList()
+        self.layer_norms = nn.ModuleList()  # Changed from batch_norms to layer_norms for stability
+        
         for _ in range(num_layers):
             self.convs.append(GCNConv(hidden_channels, hidden_channels, add_self_loops=False, normalize=False))
+            self.layer_norms.append(nn.LayerNorm(hidden_channels))  # LayerNorm is more stable than BatchNorm for small batches
         
         if nonlinear_activation:
             self.activation = nn.ReLU()
@@ -38,11 +41,24 @@ class GCNProbe(nn.Module):
         self.fc1 = Linear(2*hidden_channels, hidden_channels)
         self.fc2 = Linear(hidden_channels, num_output)
         self.dropout = Dropout(dropout)
+        
+        # Better initialization
+        self._init_weights()
+    
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, Embedding):
+                nn.init.normal_(m.weight, mean=0.0, std=0.02)
 
     def forward_graph_embedding(self, x, edge_index, edge_weight, batch):
         x = self.embedding(x)
-        for conv in self.convs:
+        for i, conv in enumerate(self.convs):
             x = conv(x, edge_index, edge_weight)
+            x = self.layer_norms[i](x)  # Use LayerNorm instead of BatchNorm
             x = self.activation(x)
             x = F.dropout(x, p=self.dropout.p, training=self.training)
         mean_x = global_mean_pool(x, batch)

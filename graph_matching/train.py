@@ -51,7 +51,8 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     writer.add_image("sim_matrix/test", test_sim_matrix, 0, dataformats="HW")
     writer.add_histogram("sim_matrix_histogram/test", test_sim_matrix, 0)
 
-    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{FLAGS.network_density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
+    density_tag = f"{int(round(FLAGS.network_density * 100)):02d}"
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer_1}_{FLAGS.llm_layer_2}" / f"best_model_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}.pth"
     os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_test_gauc = test_gauc

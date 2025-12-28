@@ -156,7 +156,8 @@ def main(_):
         save_model_name = f"{FLAGS.llm_model_name}/{FLAGS.dataset}"
     else:
         save_model_name = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}/{FLAGS.dataset}"
-    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+    density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+    model_save_path = main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/best_model_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
     model.load_state_dict(torch.load(str(model_save_path), map_location=device, weights_only=True))
     logging.info(f"✓ Weights loaded from: {model_save_path}")
 
@@ -170,7 +171,7 @@ def main(_):
     logging.info("="*60)
     logging.info("✓ STEP 4 Complete: Probe Evaluation Finished")
     logging.info("="*60)
-    np.save(str(main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{FLAGS.density}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy"), results)
+    np.save(str(main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy"), results)
 
 
 if __name__ == "__main__":

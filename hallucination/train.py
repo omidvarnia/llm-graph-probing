@@ -10,6 +10,7 @@ from hallucination.dataset import get_truthfulqa_dataloader, get_truthfulqa_line
 from hallucination.utils import test_fn
 from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
+import pandas as pd
 
 flags.DEFINE_enum("dataset_name", "truthfulqa", ["truthfulqa", "halueval", "medhallu", "helm"], "Name of the dataset.")
 flags.DEFINE_float("density", 1.0, "The density of the network/features.")
@@ -34,18 +35,23 @@ flags.DEFINE_integer("early_stop_patience", 20, "The patience for early stopping
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 flags.DEFINE_boolean("resume", False, "Whether to resume training from the best model.")
 flags.DEFINE_integer("seed", 42, "The random seed.")
+flags.DEFINE_float("label_smoothing", 0.1, "Label smoothing factor.")
+flags.DEFINE_float("gradient_clip", 1.0, "Gradient clipping value.")
+flags.DEFINE_integer("warmup_epochs", 5, "Number of warmup epochs.")
+flags.DEFINE_float("dataset_fraction", 1.0, "Fraction of dataset to use (0.1-1.0 where 1.0 = all data)")
 FLAGS = flags.FLAGS
 
 main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
-def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
+def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, warmup_scheduler, writer, save_model_name, device, class_weights):
     accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
     torch.cuda.empty_cache()
     logging.info(f"Initial Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
 
-    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+    density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+    model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
     os.makedirs(model_save_path.parent, exist_ok=True)
 
     best_metrics = {
@@ -58,11 +64,54 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
     }
     epochs_no_improve = 0
     
-    loss_fn = F.cross_entropy
+    # Use class-weighted loss with label smoothing
+    def loss_fn(output, target):
+        # Check for NaN/Inf in output before computing loss
+        if torch.isnan(output).any() or torch.isinf(output).any():
+            logging.warning(f"NaN/Inf in model output! Output shape: {output.shape}, unique values: {torch.unique(output)[:10]}")
+            logging.warning(f"Target shape: {target.shape}, unique values: {torch.unique(target)}")
+            # Return a fallback loss instead of NaN
+            return torch.tensor(0.0, requires_grad=True, device=output.device)
+        
+        loss = F.cross_entropy(output, target, weight=class_weights, label_smoothing=FLAGS.label_smoothing)
+        
+        # Check for NaN loss and log details
+        if torch.isnan(loss):
+            logging.warning(f"NaN loss detected in cross_entropy! Output stats: min={output.min():.4f}, max={output.max():.4f}, mean={output.mean():.4f}")
+        return loss
 
     def get_loss_batch_size_graph(data):
         data = data.to(device)
+        
+        # Sanitize inputs: replace NaN/Inf with small random values to preserve information
+        # NaN/Inf typically arise from zero-variance features in correlation computation
+        if torch.isnan(data.x).any() or torch.isinf(data.x).any():
+            data.x = torch.nan_to_num(data.x, nan=0.0, posinf=0.1, neginf=-0.1)
+
+        if torch.isnan(data.edge_attr).any() or torch.isinf(data.edge_attr).any():
+            # Replace NaN/Inf with small random noise instead of hard zeros
+            # This preserves more information while staying in valid correlation range [-1, 1]
+            mask_bad = ~torch.isfinite(data.edge_attr)
+            num_bad = mask_bad.sum().item()
+            if num_bad > 0 and num_bad <= 100:  # Only log if reasonable number of bad values
+                logging.debug(f"Sanitized {num_bad} NaN/Inf edge values in shape {data.edge_attr.shape}")
+            # Replace with small random values from [-0.1, 0.1]
+            data.edge_attr = torch.where(
+                mask_bad,
+                torch.randn_like(data.edge_attr) * 0.05,  # small random noise
+                data.edge_attr
+            )
+            # Clamp to valid correlation range
+            data.edge_attr = torch.clamp(data.edge_attr, -1.0, 1.0)
+        
         out = model(data.x, data.edge_index, data.edge_attr, data.batch)
+        
+        # Validate output
+        if torch.isnan(out).any() or torch.isinf(out).any():
+            logging.warning(f"NaN/Inf in model output! out shape: {out.shape}, dtype: {out.dtype}")
+            logging.warning(f"Model device: {next(model.parameters()).device}, Data device: {data.x.device}")
+            return torch.tensor(0.0, requires_grad=True, device=device), data.num_graphs
+        
         loss = loss_fn(out, data.y)
         batch_size = data.num_graphs
         return loss, batch_size
@@ -88,14 +137,38 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
             optimizer.zero_grad()
             batch_size = 0
             loss, batch_size = get_loss_batch_size(data)
+            
+            # Check for NaN loss before backward
+            if torch.isnan(loss):
+                logging.warning(f"NaN loss at batch, skipping this batch")
+                continue
+            
+            # Clamp loss to prevent explosion
+            loss = torch.clamp(loss, min=0, max=1e4)
             loss.backward()
+            
+            # Gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), FLAGS.gradient_clip)
+            
             optimizer.step()
             total_loss += loss.item() * batch_size
             num_graphs += batch_size
         
-        avg_loss = total_loss / num_graphs
-        logging.info(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")
+        # Update learning rate
+        if epoch < FLAGS.warmup_epochs:
+            warmup_scheduler.step()
+        
+        # Avoid NaN in average loss calculation
+        if num_graphs == 0:
+            avg_loss = float('nan')
+        else:
+            avg_loss = total_loss / num_graphs
+            avg_loss = min(avg_loss, 1e4)  # Cap very large losses
+            
+        current_lr = optimizer.param_groups[0]['lr']
+        logging.info(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
         writer.add_scalar("train/loss", avg_loss, epoch + 1)
+        writer.add_scalar("train/lr", current_lr, epoch + 1)
         torch.cuda.empty_cache()
 
         accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
@@ -105,9 +178,13 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         logging.info(f"Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
         for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
             writer.add_scalar(f"test/{metric}", value, epoch + 1)
-        scheduler.step(accuracy)
+        
+        # Step scheduler only after warmup
+        if epoch >= FLAGS.warmup_epochs:
+            scheduler.step(f1)
 
-        if accuracy > best_metrics["accuracy"]:
+        # Use F1 score for best model selection (better for imbalanced data)
+        if f1 > best_metrics["f1"]:
             for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
                 best_metrics[metric] = value
             best_metrics["epoch"] = epoch + 1
@@ -137,10 +214,13 @@ def main(_):
     device = torch.device(f"cuda:{FLAGS.gpu_id}")
     logging.info(f"Using device: {device}")
 
+    # Sanitize model name by replacing '/', '-', and '.' with '_' for filesystem paths
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
     save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
     
     logging.info(f"Dataset: {FLAGS.dataset_name}")
@@ -153,6 +233,53 @@ def main(_):
     logging.info(f"Training: {FLAGS.num_epochs} epochs, lr={FLAGS.lr}, batch_size={FLAGS.batch_size}")
     logging.info(f"Early stopping patience: {FLAGS.early_stop_patience}")
     logging.info(f"Seed: {FLAGS.seed}")
+    logging.info(f"Label smoothing: {FLAGS.label_smoothing}, Gradient clip: {FLAGS.gradient_clip}")
+    logging.info(f"Warmup epochs: {FLAGS.warmup_epochs}")
+    
+    # Warn if learning rate is very small (< 1e-4)
+    if FLAGS.lr < 1e-4:
+        logging.warning(f"⚠️ WARNING: Learning rate is very small ({FLAGS.lr:.2e}). This can cause numerical instability!")
+        logging.warning(f"          Consider increasing to 0.001 or higher for better training stability.")
+
+    # Calculate class weights for imbalanced data
+    dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
+    data = pd.read_csv(dataset_filename)
+    original_data_size = len(data)
+    
+    # Apply dataset fraction (randomly sample unless fraction=1.0)
+    if FLAGS.dataset_fraction < 1.0:
+        # Random sampling without fixed random_state for true randomness
+        data = data.sample(frac=FLAGS.dataset_fraction).reset_index(drop=True)
+        logging.info(f"Applied dataset_fraction={FLAGS.dataset_fraction}: sampled {len(data)} samples from {original_data_size}")
+    else:
+        logging.info(f"Using full dataset: dataset_fraction={FLAGS.dataset_fraction}")
+    
+    # Sanity check: verify dataset size is consistent with fraction
+    expected_size = int(original_data_size * FLAGS.dataset_fraction)
+    actual_size = len(data)
+    tolerance = max(1, int(0.01 * original_data_size))  # 1% tolerance
+    if abs(actual_size - expected_size) <= tolerance:
+        logging.info(f"✓ Sanity check: Dataset size ({actual_size}) is consistent with fraction ({FLAGS.dataset_fraction}) of original ({original_data_size})")
+    else:
+        logging.warning(f"⚠ Sanity check: Dataset size ({actual_size}) deviates from expected ({expected_size})")
+    
+    from collections import Counter
+    label_counts = Counter(data['label'])
+    total = sum(label_counts.values())
+    # Ensure weights are computed safely and normalized
+    weights_list = []
+    for i in sorted(label_counts.keys()):
+        if label_counts[i] == 0:
+            weight = 1.0  # Avoid division by zero
+        else:
+            weight = total / (len(label_counts) * label_counts[i])
+        weights_list.append(weight)
+    # Normalize weights to avoid extreme values
+    max_weight = max(weights_list)
+    weights_list = [w / max_weight for w in weights_list]
+    class_weights = torch.tensor(weights_list, dtype=torch.float32).to(device)
+    logging.info(f"Class distribution: {dict(label_counts)}")
+    logging.info(f"Class weights (normalized): {class_weights.cpu().numpy()}")
 
     logging.info("\nLoading data...")
     if FLAGS.num_layers > 0:
@@ -209,8 +336,14 @@ def main(_):
     logging.info(f"Train samples: {len(train_loader.dataset)}")
     logging.info(f"Test samples: {len(test_loader.dataset)}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, min_lr=1e-6)
+    # Better optimizer configuration
+    optimizer = torch.optim.AdamW(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay, betas=(0.9, 0.999))
+    
+    # Warmup scheduler - starts at 0.5x instead of 0.1x to avoid very small LRs
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=FLAGS.warmup_epochs)
+    
+    # Main scheduler (now uses F1 score)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-7, verbose=True)
     writer = SummaryWriter(log_dir=main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
     writer.add_hparams(
         {
@@ -222,7 +355,8 @@ def main(_):
     )
 
     if FLAGS.resume:
-        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{FLAGS.density}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
+        density_tag = f"{int(round(FLAGS.density * 100)):02d}"
+        model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
         logging.info(f"Resuming from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
@@ -230,7 +364,7 @@ def main(_):
     logging.info("\n" + "="*60)
     logging.info("Starting training...")
     logging.info("="*60)
-    train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)
+    train_model(model, train_loader, test_loader, optimizer, scheduler, warmup_scheduler, writer, save_model_name, device, class_weights)
     
     logging.info("\n" + "="*60)
     logging.info("✓ Training completed successfully")

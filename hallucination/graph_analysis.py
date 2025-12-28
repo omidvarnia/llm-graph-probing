@@ -21,10 +21,11 @@ def load_neural_topology_data(model_name, ckpt_step, layer, feature_name):
     """Load neural topology data for all question IDs and their true/false labels."""
     
     # Construct model directory path
+    sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if ckpt_step == -1:
-        model_dir = main_dir / "data/hallucination" / model_name
+        model_dir = main_dir / "data/hallucination" / sanitized_model_name
     else:
-        model_dir = main_dir / "data/hallucination" / f"{model_name}_step{ckpt_step}"
+        model_dir = main_dir / "data/hallucination" / f"{sanitized_model_name}_step{ckpt_step}"
     
     # Load the original dataset to get question_id mappings
     dataset_file = main_dir / "data/hallucination" / "truthfulqa.csv"
@@ -191,16 +192,24 @@ def main(_):
     
     # ===== CONFIGURATION =====
     model_name = FLAGS.llm_model_name
+    # Sanitize model name for file paths (replace /, -, and . with _)
+    model_tag = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = main_dir / "data/hallucination" / model_name
+        model_dir = main_dir / "data/hallucination" / model_tag
     else:
-        model_dir = main_dir / "data/hallucination" / f"{model_name}_step{FLAGS.ckpt_step}"
+        model_dir = main_dir / "data/hallucination" / f"{model_tag}_step{FLAGS.ckpt_step}"
     
     logging.info(f"Model: {FLAGS.llm_model_name}")
     logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
     logging.info(f"Layer: {FLAGS.layer}")
     logging.info(f"Feature: {FLAGS.feature}")
     logging.info(f"Data directory: {model_dir}")
+    # Prepare results directory under MAIN_DIR/reports/hallucination_analysis/{model_tag}/layer_{layer}
+    reports_dir = main_dir / "reports" / "hallucination_analysis" / model_tag / f"layer_{FLAGS.layer}"
+    try:
+        reports_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     
     # ===== LOAD TOPOLOGY DATA =====
     logging.info("\n" + "="*60)
@@ -222,7 +231,7 @@ def main(_):
     logging.info("="*60)
     diff = print_statistics(question_metrics)
     
-    output_file = f"{FLAGS.llm_model_name}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy"
+    output_file = reports_dir / f"{model_tag}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy"
     np.save(output_file, np.array(diff))
     logging.info(f"\nSaved results to: {output_file}")
     

@@ -55,7 +55,7 @@ def export_shell_vars(section: dict, pipeline: str):
             'model_name': 'MODEL_NAME',
             'ckpt_step': 'CKPT_STEP',
             'batch_size': 'BATCH_SIZE',
-            'layer_id': 'LAYER_ID',
+            'layer_list': 'LAYER_LIST',
             'probe_input': 'PROBE_INPUT',
             'density': 'DENSITY',
             'eval_batch_size': 'EVAL_BATCH_SIZE',
@@ -63,16 +63,21 @@ def export_shell_vars(section: dict, pipeline: str):
             'num_layers': 'NUM_LAYERS',
             'learning_rate': 'LEARNING_RATE',
             'from_sparse_data': 'FROM_SPARSE_DATA',
+            'aggregate_layers': 'AGGREGATE_LAYERS',
             'num_epochs': 'NUM_EPOCHS',
             'gpu_id': 'GPU_ID',
             'early_stop_patience': 'EARLY_STOP_PATIENCE',
+            'label_smoothing': 'LABEL_SMOOTHING',
+            'gradient_clip': 'GRADIENT_CLIP',
+            'warmup_epochs': 'WARMUP_EPOCHS',
+            'dataset_fraction': 'DATASET_FRACTION',
         }
     else:  # neuropathology
         mapping = {
             'dataset_name': 'DATASET_NAME',
             'model_name': 'MODEL_NAME',
             'ckpt_step': 'CKPT_STEP',
-            'layer_id': 'LAYER_ID',
+            'layer_list': 'LAYER_LIST',
             'density': 'DENSITY',
             'num_layers': 'NUM_LAYERS',
             'hidden_channels': 'HIDDEN_CHANNELS',
@@ -85,6 +90,7 @@ def export_shell_vars(section: dict, pipeline: str):
             'between_scale': 'BETWEEN_SCALE',
             'rewiring_prob': 'REWIRING_PROB',
             'distance_threshold': 'DISTANCE_THRESHOLD',
+            'aggregate_layers': 'AGGREGATE_LAYERS',
         }
     out = []
     for k, var in mapping.items():
@@ -102,10 +108,13 @@ def main():
 
     text = Path(args.config).read_text(encoding='utf-8')
     cfg = parse_simple_yaml(text)
+    common = cfg.get('common', {})
     if args.pipeline not in cfg:
         print(f"echo 'ERROR: pipeline {args.pipeline} not found in {args.config}' >&2; exit 1")
         return
-    print(export_shell_vars(cfg[args.pipeline], args.pipeline))
+    merged = common.copy()
+    merged.update(cfg[args.pipeline])
+    print(export_shell_vars(merged, args.pipeline))
 
 if __name__ == '__main__':
     main()

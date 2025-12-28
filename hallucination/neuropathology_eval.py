@@ -71,10 +71,11 @@ class PathoTruthfulQADataset(torch.utils.data.Dataset):
         self.disease_name = disease_name
         self.use_saved_sparse = use_saved_sparse
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
 
     def __len__(self):
@@ -86,8 +87,9 @@ class PathoTruthfulQADataset(torch.utils.data.Dataset):
         y = torch.from_numpy(np.load(q_dir / "label.npy")).long()
 
         if self.use_saved_sparse:
-            ei = torch.from_numpy(np.load(q_dir / f"layer_{self.llm_layer}_sparse_{self.density}_patho_{self.disease_name}_edge_index.npy")).long()
-            ea = torch.from_numpy(np.load(q_dir / f"layer_{self.llm_layer}_sparse_{self.density}_patho_{self.disease_name}_edge_attr.npy")).float()
+            density_tag = f"{int(round(self.density * 100)):02d}"
+            ei = torch.from_numpy(np.load(q_dir / f"layer_{self.llm_layer}_sparse_{density_tag}_patho_{self.disease_name}_edge_index.npy")).long()
+            ea = torch.from_numpy(np.load(q_dir / f"layer_{self.llm_layer}_sparse_{density_tag}_patho_{self.disease_name}_edge_attr.npy")).float()
             num_nodes = int(ei.max().item()) + 1
         else:
             C = _load_dense(q_dir / f"layer_{self.llm_layer}_corr_patho_{self.disease_name}.npy")
@@ -100,12 +102,14 @@ class PathoTruthfulQADataset(torch.utils.data.Dataset):
 
 
 def _load_best_model(device, dataset_name, llm_model_name, ckpt_step, llm_layer, density, hidden_channels, num_layers, probe_input):
+    sanitized_model_name = llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if ckpt_step == -1:
-        model_dir = llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{llm_model_name}_step{ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{ckpt_step}"
     save_model_name = f"hallucination/{dataset_name}/{model_dir}"
-    model_path = main_dir / f"saves/{save_model_name}/layer_{llm_layer}" / f"best_model_density-{density}_dim-{hidden_channels}_hop-{num_layers}_input-{probe_input}.pth"
+    density_tag = f"{int(round(density * 100)):02d}"
+    model_path = main_dir / f"saves/{save_model_name}/layer_{llm_layer}" / f"best_model_density-{density_tag}_dim-{hidden_channels}_hop-{num_layers}_input-{probe_input}.pth"
     num_nodes = get_num_nodes(llm_model_name, llm_layer)
     model = GCNProbe(num_nodes=num_nodes, hidden_channels=hidden_channels, num_layers=num_layers, dropout=0.0, num_output=2).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
@@ -134,10 +138,11 @@ def main(_):
     logging.info("="*60)
 
     device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = FLAGS.llm_model_name
+        model_dir = sanitized_model_name
     else:
-        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
 
     # Build test indices
     dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
