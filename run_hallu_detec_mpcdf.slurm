@@ -69,6 +69,45 @@ export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH:-}"
 export MAIN_DIR="${MAIN_DIR}"
 
 # =============================================================================
+# GPU/ROCm Test
+# =============================================================================
+echo ""
+echo "============================================================"
+echo "Testing PyTorch GPU/ROCm Availability"
+echo "============================================================"
+echo "System GPU Info:"
+echo "  Total GPUs on node: $(nvidia-smi -L 2>/dev/null | wc -l || rocm-smi --showid 2>/dev/null | grep -c 'GPU' || echo '2 (AMD MI250X - 2 GCDs per node)')"
+echo "  SLURM GPU allocation: ${SLURM_GPUS_ON_NODE:-${SLURM_JOB_GPUS:-1}} GPU(s) allocated to this job"
+echo ""
+${PYTHON} -c "
+import torch
+import os
+print('PyTorch Configuration:')
+print('  PyTorch version:', torch.__version__)
+print('  HIP version:', torch.version.hip if hasattr(torch.version, 'hip') else 'N/A')
+print('  CUDA available:', torch.cuda.is_available())
+print('  Device count visible to PyTorch:', torch.cuda.device_count())
+print('')
+if torch.cuda.is_available():
+    for i in range(torch.cuda.device_count()):
+        props = torch.cuda.get_device_properties(i)
+        print(f'  GPU {i}: {torch.cuda.get_device_name(i)}')
+        print(f'    Memory: {props.total_memory / 1024**3:.1f} GB')
+        print(f'    Compute units: {props.multi_processor_count}')
+        print(f'    Architecture: {props.gcnArchName if hasattr(props, \"gcnArchName\") else \"N/A\"}')
+        print('')
+else:
+    print('WARNING: No GPU detected by PyTorch!')
+    print('Environment variables:')
+    print('  HIP_VISIBLE_DEVICES:', os.getenv('HIP_VISIBLE_DEVICES', 'Not set'))
+    print('  ROCR_VISIBLE_DEVICES:', os.getenv('ROCR_VISIBLE_DEVICES', 'Not set'))
+    print('  CUDA_VISIBLE_DEVICES:', os.getenv('CUDA_VISIBLE_DEVICES', 'Not set'))
+print('='*60)
+"
+echo "============================================================"
+echo ""
+
+# =============================================================================
 # Configuration Parameters (modify as needed)
 # =============================================================================
 # Configuration file path (main input to the pipeline)
@@ -98,9 +137,11 @@ echo "Python Executable: ${PYTHON}"
 echo "PYTHONPATH: ${PYTHONPATH}"
 echo ""
 echo "--- GPU Configuration ---"
-echo "GPU(s) Allocated: ${SLURM_JOB_GPUS}"
+echo "GPU(s) Requested: ${SLURM_GPUS_ON_NODE:-${SLURM_JOB_GPUS:-1}}"
+echo "GPU Devices (HIP_VISIBLE_DEVICES): ${HIP_VISIBLE_DEVICES}"
 echo "CPUs per Task: ${SLURM_CPUS_PER_TASK}"
 echo "Memory: $(sinfo -N -n $(hostname) -o '%m')"
+echo "Node: ${SLURM_NODELIST}"
 
 # Log file and folder naming conventions
 echo "FILE & FOLDER NAMING CONVENTIONS:"

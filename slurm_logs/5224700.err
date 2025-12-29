@@ -1,0 +1,112 @@
+/u/aomidvarnia/.bashrc: line 32: bind: warning: line editing not enabled
+/u/aomidvarnia/.bashrc: line 33: bind: warning: line editing not enabled
+amdgpu.ids: No such file or directory
+2025-12-29 09:47:17,147 - INFO - Starting Graph Probing Analysis
+2025-12-29 09:47:17,148 - INFO - 
+============================================================
+2025-12-29 09:47:17,148 - INFO - STEP 1: Constructing Dataset
+2025-12-29 09:47:17,148 - INFO - ============================================================
+2025-12-29 09:47:17,148 - INFO - Dataset: truthfulqa
+2025-12-29 09:47:17,148 - INFO - Model: Qwen/Qwen2.5-0.5B (sanitized: Qwen_Qwen2_5_0_5B)
+2025-12-29 09:47:17,148 - INFO - Checkpoint step: -1
+2025-12-29 09:47:17,148 - INFO - Batch size: 16
+2025-12-29 09:47:17,148 - INFO - Using Python: /ptmp/aomidvarnia/uv_envs/llm_graph/bin/python
+2025-12-29 09:47:17,148 - INFO - Executing construct_dataset.py...
+2025-12-29 09:47:20,238 - INFO - ✓ Dataset constructed successfully
+2025-12-29 09:47:20,238 - INFO - ✓ SANITY CHECK: Dataset file exists at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa.csv
+2025-12-29 09:47:20,246 - INFO - ✓ SANITY CHECK: Dataset loaded successfully
+2025-12-29 09:47:20,246 - INFO -   - Total rows: 5915
+2025-12-29 09:47:20,246 - INFO -   - Columns: ['question_id', 'question', 'answer', 'label']
+2025-12-29 09:47:20,246 - INFO - ✓ SANITY CHECK: All required columns present: ['label', 'answer']
+2025-12-29 09:47:20,247 - INFO - ✓ SANITY CHECK: Label distribution: {0: 3317, 1: 2598}
+2025-12-29 09:47:20,247 - INFO - ✓ SANITY CHECK: Both classes present
+2025-12-29 09:47:20,361 - INFO - ✓ Saved label distribution plot to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/Qwen_Qwen2_5_0_5B/layer_5/dataset_label_distribution.png
+2025-12-29 09:47:20,363 - INFO - ✓ Saved dataset head (20 rows) to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/Qwen_Qwen2_5_0_5B/layer_5/dataset_head.csv
+2025-12-29 09:47:20,363 - INFO - ✓ Dataset is ready for processing
+2025-12-29 09:47:20,363 - INFO - 
+============================================================
+2025-12-29 09:47:20,363 - INFO - STEP 2: Generating Neural Topology (Network Graph)
+2025-12-29 09:47:20,363 - INFO - ============================================================
+2025-12-29 09:47:20,363 - INFO - Layer IDs: [5, 6, 7, 8, 9, 10, 11]
+2025-12-29 09:47:20,363 - INFO - Network density: 0.05
+2025-12-29 09:47:20,363 - INFO - Sparse mode: True
+2025-12-29 09:47:20,363 - INFO - ✓ SANITY CHECK: network_density=0.05 is valid
+2025-12-29 09:47:20,363 - INFO - ✓ SANITY CHECK: 7 layer(s) to process
+2025-12-29 09:47:20,363 - INFO - Executing compute_llm_network.py...
+2025-12-29 10:21:27,178 - INFO - ✓ Network computation completed
+2025-12-29 10:21:27,178 - WARNING - ⚠ SANITY CHECK: No sparse network files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/Qwen/Qwen2.5-0.5B/layer_5
+2025-12-29 10:21:27,699 - INFO - ✓ Saved FC matrix before threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/Qwen_Qwen2_5_0_5B/layer_5/fc_before_threshold.png
+2025-12-29 10:21:27,867 - INFO - ✓ Saved FC matrix after threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/Qwen_Qwen2_5_0_5B/layer_5/fc_after_threshold.png
+2025-12-29 10:21:27,871 - INFO -   Threshold: 0.9299, Edges before: 802816, after: 39246
+2025-12-29 10:21:27,871 - INFO - 
+============================================================
+2025-12-29 10:21:27,871 - INFO - STEP 3: Training Graph Neural Network Probes
+2025-12-29 10:21:27,871 - INFO - ============================================================
+2025-12-29 10:21:27,871 - INFO - Probe input: corr
+2025-12-29 10:21:27,871 - INFO - Density: 0.05
+2025-12-29 10:21:27,871 - INFO - Num channels: 32
+2025-12-29 10:21:27,871 - INFO - Num layers: 2
+2025-12-29 10:21:27,871 - INFO - Learning rate: 0.001
+2025-12-29 10:21:27,871 - INFO - Batch size: 16
+2025-12-29 10:21:27,871 - INFO - Eval batch size: 32
+2025-12-29 10:21:27,871 - INFO - Num epochs: 100
+2025-12-29 10:21:27,871 - INFO - Early stop patience: 20
+2025-12-29 10:21:27,871 - INFO - Label smoothing: 0.1
+2025-12-29 10:21:27,871 - INFO -   Num epochs: 100
+2025-12-29 10:21:27,871 - INFO -   Early stop patience: 20
+2025-12-29 10:21:27,871 - INFO -   Label smoothing: 0.1
+2025-12-29 10:21:27,872 - INFO -   Gradient clipping: 1.0
+2025-12-29 10:21:27,872 - INFO -   Warmup epochs: 5
+2025-12-29 10:21:27,872 - INFO - ✓ SANITY CHECK: num_epochs=100 is valid
+2025-12-29 10:21:27,872 - INFO - ✓ SANITY CHECK: learning_rate=0.001 is valid
+2025-12-29 10:21:27,872 - INFO - ✓ SANITY CHECK: label_smoothing=0.1 is valid
+2025-12-29 10:21:27,872 - INFO - Executing train.py...
+2025-12-29 10:21:27,872 - INFO - This may take a while...
+2025-12-29 10:25:31,718 - ERROR - ✗ Training failed with return code 1
+2025-12-29 10:25:31,719 - INFO - 
+============================================================
+2025-12-29 10:25:31,719 - INFO - 
+Step 4: Evaluating trained probes...
+2025-12-29 10:25:31,719 - INFO -   Network density: 0.05
+2025-12-29 10:25:31,719 - INFO - Executing eval.py...
+2025-12-29 10:25:31,719 - INFO - Computing evaluation metrics...
+2025-12-29 10:29:52,243 - INFO - ✓ Evaluation completed successfully
+2025-12-29 10:29:52,243 - INFO - Evaluation results are ready
+2025-12-29 10:29:52,243 - INFO - 
+============================================================
+2025-12-29 10:29:52,243 - INFO - 
+Step 5: Computing graph statistics...
+2025-12-29 10:29:52,243 - INFO -   Layers to analyze: [5, 6, 7, 8, 9, 10, 11]
+2025-12-29 10:29:52,243 - INFO -   Network density: 0.05
+2025-12-29 10:29:52,243 - INFO - Executing graph_analysis.py for layer 5...
+2025-12-29 10:30:38,921 - INFO - ✓ Graph analysis completed successfully for layer 5
+2025-12-29 10:30:38,921 - INFO - Graph analysis results are ready
+2025-12-29 10:30:39,053 - INFO - Executing graph_analysis.py for layer 6...
+2025-12-29 10:33:34,603 - INFO - ✓ Graph analysis completed successfully for layer 6
+2025-12-29 10:33:34,604 - INFO - Graph analysis results are ready
+2025-12-29 10:33:34,708 - INFO - Executing graph_analysis.py for layer 7...
+2025-12-29 10:36:29,203 - INFO - ✓ Graph analysis completed successfully for layer 7
+2025-12-29 10:36:29,203 - INFO - Graph analysis results are ready
+2025-12-29 10:36:29,306 - INFO - Executing graph_analysis.py for layer 8...
+2025-12-29 10:39:28,604 - INFO - ✓ Graph analysis completed successfully for layer 8
+2025-12-29 10:39:28,605 - INFO - Graph analysis results are ready
+2025-12-29 10:39:28,706 - INFO - Executing graph_analysis.py for layer 9...
+2025-12-29 10:42:36,503 - INFO - ✓ Graph analysis completed successfully for layer 9
+2025-12-29 10:42:36,504 - INFO - Graph analysis results are ready
+2025-12-29 10:42:36,604 - INFO - Executing graph_analysis.py for layer 10...
+2025-12-29 10:45:47,275 - INFO - ✓ Graph analysis completed successfully for layer 10
+2025-12-29 10:45:47,275 - INFO - Graph analysis results are ready
+2025-12-29 10:45:47,467 - INFO - Executing graph_analysis.py for layer 11...
+2025-12-29 10:49:01,455 - INFO - ✓ Graph analysis completed successfully for layer 11
+2025-12-29 10:49:01,455 - INFO - Graph analysis results are ready
+2025-12-29 10:49:01,639 - INFO - 
+============================================================
+2025-12-29 10:49:01,639 - INFO - ✓ Graph Probing Analysis Complete!
+2025-12-29 10:49:01,639 - INFO - ============================================================
+2025-12-29 10:49:01,639 - INFO - Summary:
+2025-12-29 10:49:01,639 - INFO -   - Dataset: truthfulqa
+2025-12-29 10:49:01,639 - INFO -   - Model: Qwen/Qwen2.5-0.5B
+2025-12-29 10:49:01,639 - INFO -   - Layers analyzed: 5, 6, 7, 8, 9, 10, 11
+2025-12-29 10:49:01,639 - INFO -   - Probe input type: corr
+2025-12-29 10:49:01,639 - INFO - All steps completed successfully!
+2025-12-29 10:49:01,640 - INFO - Reports saved under: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/Qwen_Qwen2_5_0_5B

@@ -151,25 +151,86 @@ def run_llm(
 
 def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_density=1.0, aggregate_layers=False):
     from torch_geometric.utils import dense_to_sparse
+    
+    def check_question_complete(p_dir_name, layer_list, sparse=False, network_density=1.0, aggregate_layers=False):
+        """Check if all required files for a question already exist."""
+        required_files = [
+            f"{p_dir_name}/label.npy",
+            f"{p_dir_name}/layer_average_corr.npy",
+            f"{p_dir_name}/layer_average_activation.npy",
+            f"{p_dir_name}/layer_average_degree.npy",
+            f"{p_dir_name}/word2vec_average.npy",
+            f"{p_dir_name}/word2vec_token_count.npy",
+        ]
+        
+        # Check per-layer files
+        density_tag = f"{int(round(network_density * 100)):02d}"
+        for layer_idx in layer_list:
+            required_files.extend([
+                f"{p_dir_name}/layer_{layer_idx}_degree.npy",
+                f"{p_dir_name}/layer_{layer_idx}_corr.npy",
+            ])
+            if sparse:
+                required_files.extend([
+                    f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_index.npy",
+                    f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_attr.npy",
+                ])
+            required_files.extend([
+                f"{p_dir_name}/layer_{layer_idx}_activation.npy",
+                f"{p_dir_name}/layer_{layer_idx}_activation_avg.npy",
+            ])
+        
+        # Check combined layers if enabled
+        if aggregate_layers and len(layer_list) > 1:
+            required_files.extend([
+                f"{p_dir_name}/layers_combined_degree.npy",
+                f"{p_dir_name}/layers_combined_corr.npy",
+            ])
+            if sparse:
+                required_files.extend([
+                    f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_index.npy",
+                    f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_attr.npy",
+                ])
+            required_files.extend([
+                f"{p_dir_name}/layers_combined_activation.npy",
+                f"{p_dir_name}/layers_combined_activation_avg.npy",
+            ])
+        
+        # Check if ALL required files exist
+        for fpath in required_files:
+            if not os.path.exists(fpath):
+                return False
+        return True
+    
+    processed_count = 0
+    skipped_count = 0
+    
     with torch.no_grad():
         while True:
             batch = queue.get(block=True)
             if batch == "STOP":
                 break
             hidden_states_layer_average, hidden_states, attention_mask, question_indices, labels, word2vec_embeddings, word_token_counts = batch
+            
             for i, question_idx in enumerate(question_indices):
-                sentence_attention_mask = attention_mask[i]
-
                 p_dir_name = f"{p_save_path}/{question_idx}"
+                
+                # Check if question data is already complete
+                if os.path.exists(p_dir_name) and check_question_complete(p_dir_name, layer_list, sparse, network_density, aggregate_layers):
+                    skipped_count += 1
+                    if skipped_count % 50 == 0 or skipped_count <= 5:
+                        logging.info(f"[Worker {worker_idx}] Skipped question {question_idx} (already processed). Total skipped: {skipped_count}")
+                    continue
+                
+                # Process this question
                 os.makedirs(p_dir_name, exist_ok=True)
+                sentence_attention_mask = attention_mask[i]
                 
                 # Save correctness label
                 np.save(f"{p_dir_name}/label.npy", labels[i])
 
                 layer_average_hidden_states = hidden_states_layer_average[:, i, sentence_attention_mask == 1]
                 layer_average_corr = np.corrcoef(layer_average_hidden_states)
-                # Handle NaN/Inf from zero-variance features
-                layer_average_corr = np.nan_to_num(layer_average_corr, nan=0.0, posinf=0.0, neginf=0.0)
                 np.save(f"{p_dir_name}/layer_average_corr.npy", layer_average_corr)
 
                 layer_average_activation = layer_average_hidden_states[:, -1]
@@ -187,10 +248,6 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                     sentence_hidden_states = layer_hidden_states[sentence_attention_mask == 1].T
                     per_layer_states.append(sentence_hidden_states)
                     corr = np.corrcoef(sentence_hidden_states)
-                    # Handle NaN/Inf from zero-variance features or numerical instability
-                    corr = np.nan_to_num(corr, nan=0.0, posinf=0.0, neginf=0.0)
-                    # Ensure correlations stay in [-1, 1] range
-                    corr = np.clip(corr, -1.0, 1.0)
                     
                     degree = np.abs(corr).sum(axis=1)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_degree.npy", degree)
@@ -300,7 +357,13 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
                     combined_activation_avg = combined_states.mean(-1)
                     np.save(f"{p_dir_name}/layers_combined_activation_avg.npy", combined_activation_avg)
-
+                
+                # Log progress
+                processed_count += 1
+                if processed_count % 100 == 0 or processed_count <= 10:
+                    logging.info(f"[Worker {worker_idx}] Processed question {question_idx}. Total processed: {processed_count}, Skipped: {skipped_count}")
+    
+    logging.info(f"[Worker {worker_idx}] Finished processing. Total processed: {processed_count}, Total skipped: {skipped_count}")
     print(f"Worker {worker_idx} finished processing.")
 
 

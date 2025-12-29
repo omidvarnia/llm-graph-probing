@@ -270,7 +270,6 @@ early_stop_patience = int(hallu_cfg.get('early_stop_patience', 20))
 label_smoothing = float(hallu_cfg.get('label_smoothing', 0.1))
 gradient_clip = float(hallu_cfg.get('gradient_clip', 1.0))
 warmup_epochs = int(hallu_cfg.get('warmup_epochs', 5))
-dataset_fraction = float(common_cfg.get('dataset_fraction', 1.0))
 gpu_id = int(common_cfg.get('gpu_id', 0))
 from_sparse_data = common_cfg.get('from_sparse_data', True)
 if isinstance(from_sparse_data, str):
@@ -287,8 +286,23 @@ env = os.environ.copy()
 # Set PYTHONPATH to include project root, ensuring utils package is found before local utils.py
 env['PYTHONPATH'] = str(project_dir)
 env['MAIN_DIR'] = str(main_dir)
+
+# Ensure GPU environment variables are propagated to subprocesses
+# These are set in the SLURM script but might not be inherited properly
+if 'HIP_VISIBLE_DEVICES' in os.environ:
+    env['HIP_VISIBLE_DEVICES'] = os.environ['HIP_VISIBLE_DEVICES']
+if 'ROCR_VISIBLE_DEVICES' in os.environ:
+    env['ROCR_VISIBLE_DEVICES'] = os.environ['ROCR_VISIBLE_DEVICES']
+if 'CUDA_VISIBLE_DEVICES' in os.environ:
+    env['CUDA_VISIBLE_DEVICES'] = os.environ['CUDA_VISIBLE_DEVICES']
+
 # Ensure we use the same Python executable
 python_exe = sys.executable
+
+logging.info(f"GPU Environment Variables:")
+logging.info(f"  HIP_VISIBLE_DEVICES: {env.get('HIP_VISIBLE_DEVICES', 'Not set')}")
+logging.info(f"  ROCR_VISIBLE_DEVICES: {env.get('ROCR_VISIBLE_DEVICES', 'Not set')}")
+logging.info(f"  CUDA_VISIBLE_DEVICES: {env.get('CUDA_VISIBLE_DEVICES', 'Not set')}")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting Graph Probing Analysis")
@@ -382,7 +396,6 @@ step_results = []
 #     Example: "Qwen/Qwen2.5-0.5B" → "Qwen_Qwen2_5_0_5B"
 #   - All special characters in filenames/folder names are replaced with '_'
 #   - No spaces, periods (except extensions), backslashes, or slashes
-#   - dataset_fraction is NOT included in filenames (applied during loading)
 #
 # DIRECTORY STRUCTURE:
 #   {main_dir}/
@@ -427,13 +440,6 @@ step_results = []
 #   - {C}: Number of hidden channels (e.g., 32)
 #   - {L}: Number of GNN layers (e.g., 2)
 #   - {T}: Probe input type (corr, activation, etc.)
-#   - {dataset_fraction}: Applied during data loading, NOT in filenames
-#
-# NOTE ON dataset_fraction:
-#   - Values: 0.1 to 1.0 (1.0 = full dataset)
-#   - Applied by RANDOMLY sampling from the full dataset
-#   - Different runs with same fraction may use different subsets
-#   - Sanity checks verify actual size matches expected fraction
 #
 # ========================================================================
 
@@ -447,13 +453,6 @@ logging.info(f"Dataset: {dataset_name}")
 logging.info(f"Model: {model_name} (sanitized: {model_tag})")
 logging.info(f"Checkpoint step: {ckpt_step}")
 logging.info(f"Batch size: {batch_size}")
-logging.info(f"Dataset fraction: {dataset_fraction} (random sample from full dataset)")
-
-# Sanity check: dataset_fraction
-if not (0.1 <= dataset_fraction <= 1.0):
-    logging.error(f"✗ SANITY CHECK FAILED: dataset_fraction must be between 0.1 and 1.0, got {dataset_fraction}")
-    sys.exit(1)
-logging.info(f"✓ SANITY CHECK: dataset_fraction={dataset_fraction} is valid")
 
 logging.info(f"Using Python: {sys.executable}")
 logging.info("Executing construct_dataset.py...")
@@ -464,7 +463,6 @@ result = run(
         python_exe,
         "hallucination/construct_dataset.py",
         f"--dataset_name={dataset_name}",
-        f"--dataset_fraction={dataset_fraction}",
     ],
     cwd=project_dir,
     env=env,
@@ -544,7 +542,6 @@ logging.info("="*60)
 logging.info(f"Layer IDs: {layer_ids}")
 logging.info(f"Network density: {network_density}")
 logging.info(f"Sparse mode: {from_sparse_data}")
-logging.info(f"Dataset fraction: {dataset_fraction}")
 
 # Sanity checks for Step 2
 if not (0.01 <= network_density <= 1.0):
@@ -571,7 +568,6 @@ result = run(
         *[f"--llm_layer={lid}" for lid in layer_ids],
         f"--batch_size={batch_size}",
         f"--network_density={network_density}",
-        f"--dataset_fraction={dataset_fraction}",
         f"--gpu_id={gpu_id}",
         ] + (["--sparse"] if from_sparse_data else [])
             + (["--aggregate_layers"] if aggregate_layers else []),
@@ -676,7 +672,6 @@ logging.info(f"Eval batch size: {eval_batch_size}")
 logging.info(f"Num epochs: {num_epochs}")
 logging.info(f"Early stop patience: {early_stop_patience}")
 logging.info(f"Label smoothing: {label_smoothing}")
-logging.info(f"Dataset fraction: {dataset_fraction}")
 logging.info(f"  Num epochs: {num_epochs}")
 logging.info(f"  Early stop patience: {early_stop_patience}")
 logging.info(f"  Label smoothing: {label_smoothing}")
@@ -723,7 +718,6 @@ result = run(
         f"--label_smoothing={label_smoothing}",
         f"--gradient_clip={gradient_clip}",
         f"--warmup_epochs={warmup_epochs}",
-        f"--dataset_fraction={dataset_fraction}",
         f"--gpu_id={gpu_id}",
     ] + (["--from_sparse_data"] if from_sparse_data else []),
     cwd=project_dir,
@@ -860,6 +854,7 @@ for lid in layer_ids:
             python_exe,
             "-m",
             "hallucination.graph_analysis",
+            f"--dataset_name={dataset_name}",
             f"--llm_model_name={model_name}",
             f"--ckpt_step={ckpt_step}",
             f"--layer={lid}",

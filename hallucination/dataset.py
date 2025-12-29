@@ -1,6 +1,7 @@
 from ast import main
 import os
 from tqdm import tqdm
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,6 @@ from torch.utils.data import DataLoader as TorchDataLoader
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torch_geometric.utils import dense_to_sparse
-from pathlib import Path
 
 main_dir = Path(os.environ.get('MAIN_DIR', '.'))
 
@@ -40,12 +40,13 @@ class TruthfulQADataset(Dataset):
         self.in_memory = in_memory
         self.dataset_name = dataset_name
 
+        # Sanitize model name for filesystem paths
         sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
             model_dir = sanitized_model_name
         else:
             model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
-        self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
+        self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         if self.in_memory:
             self.loaded_data = []
@@ -57,10 +58,12 @@ class TruthfulQADataset(Dataset):
 
     def _load_data(self, idx):
         question_idx = self.network_indices[idx]
-        data_path = os.path.join(self.data_dir, str(question_idx))
+        data_path = self.data_dir / str(question_idx)
 
         if not self.from_sparse_data:
-            adj = np.load(os.path.join(data_path, self.dense_filename))
+            adj = np.load(data_path / self.dense_filename)
+            # Replace NaN/Inf values to stabilize downstream graph ops
+            adj = np.nan_to_num(adj, nan=0.0, posinf=0.0, neginf=0.0)
             percentile_threshold = self.network_density * 100
             threshold = np.percentile(np.abs(adj), 100 - percentile_threshold)
             adj[np.abs(adj) < threshold] = 0
@@ -70,11 +73,11 @@ class TruthfulQADataset(Dataset):
             num_nodes = adj.shape[0]
         else:
             density_tag = f"{int(round(self.network_density * 100)):02d}"
-            edge_index = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy"))).long()
-            edge_attr = torch.from_numpy(np.load(os.path.join(data_path, f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy"))).float()
+            edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy")).long()
+            edge_attr = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy")).float()
             num_nodes = edge_index.max().item() + 1
 
-        y = torch.from_numpy(np.load(os.path.join(data_path, "label.npy"))).long()
+        y = torch.from_numpy(np.load(data_path / "label.npy")).long()
         x = torch.arange(num_nodes)
 
         return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
@@ -132,9 +135,11 @@ class TruthfulQALinearDataset(TorchDataset):
 
     def _load_data(self, idx):
         question_idx = self.network_indices[idx]
-        data_path = os.path.join(self.data_dir, str(question_idx))
-        feature = np.load(os.path.join(data_path, self.dense_filename)).astype(np.float32)
-        feature = torch.from_numpy(feature)
+        data_path = self.data_dir / str(question_idx)
+        feature_np = np.load(data_path / self.dense_filename).astype(np.float32)
+        # Clean NaN/Inf in dense features (e.g., corr matrices)
+        feature_np = np.nan_to_num(feature_np, nan=0.0, posinf=0.0, neginf=0.0)
+        feature = torch.from_numpy(feature_np)
         if self.feature_name == "corr":
             triu_indices = torch.triu_indices(feature.shape[0], feature.shape[1], offset=1)
             feature = feature[triu_indices[0], triu_indices[1]]
@@ -144,7 +149,7 @@ class TruthfulQALinearDataset(TorchDataset):
             threshold = torch.quantile(torch.abs(feature), 1 - self.feature_density)
             feature[torch.abs(feature) < threshold] = 0
             
-        y = torch.from_numpy(np.load(os.path.join(data_path, "label.npy"))).long()
+        y = torch.from_numpy(np.load(data_path / "label.npy")).long()
 
         return (feature, y)
 
@@ -192,12 +197,13 @@ class TruthfulQACCSDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
+        # Sanitize model name for filesystem paths
         sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
             model_dir = sanitized_model_name
         else:
             model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
-        self.data_dir = os.path.join("data/hallucination", self.dataset_name, model_dir)
+        self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
         for idx in tqdm(range(len(self.network_indices)), desc="Loading CCS features into memory"):
@@ -210,9 +216,9 @@ class TruthfulQACCSDataset(TorchDataset):
 
     def _load_data(self, idx):
         question_idx = self.network_indices[idx]
-        data_path = os.path.join(self.data_dir, str(question_idx))
-        feature_yes = np.load(os.path.join(data_path, self.dense_filename_yes)).astype(np.float32)
-        feature_no = np.load(os.path.join(data_path, self.dense_filename_no)).astype(np.float32)
+        data_path = self.data_dir / str(question_idx)
+        feature_yes = np.load(data_path / self.dense_filename_yes).astype(np.float32)
+        feature_no = np.load(data_path / self.dense_filename_no).astype(np.float32)
         feature_yes = torch.from_numpy(feature_yes)
         feature_no = torch.from_numpy(feature_no)
         
@@ -223,7 +229,7 @@ class TruthfulQACCSDataset(TorchDataset):
             threshold_no = torch.quantile(torch.abs(feature_no), 1 - self.feature_density)
             feature_no[torch.abs(feature_no) < threshold_no] = 0
 
-        y = torch.from_numpy(np.load(os.path.join(data_path, "label.npy"))).long()
+        y = torch.from_numpy(np.load(data_path / "label.npy")).long()
 
         return (feature_yes, feature_no, y)
 
