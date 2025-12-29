@@ -18,7 +18,7 @@ To install the package, run the following command:
 pip install -r requirements.txt
 ```
 
-You may install `torch-scatter` to accelerate GNN computation. Please refer to the [installation instructions](https://github.com/rusty1s/pytorch_scatter#installation) for your specific CUDA version. 
+Optional: You can install `torch-scatter` for additional acceleration, but the default GCN path in this repo is scatter-free and works without it. See the [installation instructions](https://github.com/rusty1s/pytorch_scatter#installation) if you choose to add it.
 
 ## Usage of Graph Probing
 ### Data Preparation

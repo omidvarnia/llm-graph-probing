@@ -74,7 +74,11 @@ class TruthfulQADataset(Dataset):
         else:
             density_tag = f"{int(round(self.network_density * 100)):02d}"
             edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy")).long()
-            edge_attr = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy")).float()
+            edge_attr_np = np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy").astype(np.float32)
+            # Sanitize NaN/Inf in saved sparse weights and clamp to [-1,1]
+            edge_attr_np = np.nan_to_num(edge_attr_np, nan=0.0, posinf=0.0, neginf=0.0)
+            edge_attr_np = np.clip(edge_attr_np, -1.0, 1.0)
+            edge_attr = torch.from_numpy(edge_attr_np).float()
             num_nodes = edge_index.max().item() + 1
 
         y = torch.from_numpy(np.load(data_path / "label.npy")).long()

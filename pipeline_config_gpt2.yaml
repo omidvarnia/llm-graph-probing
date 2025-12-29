@@ -45,8 +45,14 @@ common:
   ckpt_step: -1                         # Checkpoint step (-1 uses main checkpoint)
   layer_list: 5,6,7,8,9,10,11       # Layers to process; first entry is primary for train/eval
   density: 0.05                         # Network density threshold (0.0-1.0) for FC sparsification
-  num_layers: 2                         # GNN depth
-  hidden_channels: 32                   # GNN hidden size
+  # ===== Probe Architecture (Reference uses GCN with 3 layers) =====
+  # Option 1: GCN with 3 layers (RECOMMENDED - matches reference)
+  #   num_layers: 3
+  #   Note: Requires torch_scatter compiled with ROCm. If unavailable, will fail at Step 3 (train).
+  # Option 2: MLP (no graph structure, fallback)
+  #   num_layers: -2  (2 hidden layers in MLP)
+  num_layers: 3                         # GCN depth (3 layers = reference config); use -N for MLP with N hidden layers
+  hidden_channels: 32                   # GNN hidden size (same as reference)
   gpu_id: 0                             # GPU index to use
   from_sparse_data: true                # Expect sparse FC inputs
   early_stop_patience: 20               # Early stopping patience (epochs)
@@ -58,7 +64,7 @@ hallucination:
   batch_size: 16                        # LLM forward batch size
   probe_input: corr                     # Probe input type: corr or activation
   eval_batch_size: 32                   # Eval batch size for probe
-  learning_rate: 0.0001                  # Probe optimizer learning rate (was 0.00001, increased for stability)
+  learning_rate: 0.001                  # Probe optimizer learning rate (reference uses 0.001)
   num_epochs: 100                       # Max probe training epochs
   label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
   gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)

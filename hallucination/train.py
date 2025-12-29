@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 from hallucination.dataset import get_truthfulqa_dataloader, get_truthfulqa_linear_dataloader
-from hallucination.utils import test_fn
+from hallucination.utils import test_fn, select_device
 from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
 import pandas as pd
@@ -192,13 +192,7 @@ def main(_):
     logging.info("="*60)
     
     # ===== DEVICE & CONFIGURATION =====
-    if torch.cuda.is_available():
-        device = torch.device(f"cuda:{FLAGS.gpu_id}")
-        logging.info(f"Using device: {device} (GPU: {torch.cuda.get_device_name(FLAGS.gpu_id)})")
-    else:
-        device = torch.device("cpu")
-        logging.warning(f"CUDA not available! Using CPU instead. Training will be slower.")
-        logging.warning(f"Check environment variables: HIP_VISIBLE_DEVICES, ROCR_VISIBLE_DEVICES, CUDA_VISIBLE_DEVICES")
+    device = select_device(FLAGS.gpu_id)
 
     # Sanitize model name by replacing '/', '-', and '.' with '_' for filesystem paths
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')

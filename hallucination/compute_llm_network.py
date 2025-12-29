@@ -151,6 +151,7 @@ def run_llm(
 
 def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_density=1.0, aggregate_layers=False):
     from torch_geometric.utils import dense_to_sparse
+    import json
     
     def check_question_complete(p_dir_name, layer_list, sparse=False, network_density=1.0, aggregate_layers=False):
         """Check if all required files for a question already exist."""
@@ -204,6 +205,12 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
     
     processed_count = 0
     skipped_count = 0
+    excluded_count = 0
+    excluded_indices = []
+    class_stats = {
+        0: {"sum": 0.0, "sum_sq": 0.0, "count": 0, "sum_means": 0.0, "sum_stds": 0.0, "q_count": 0},
+        1: {"sum": 0.0, "sum_sq": 0.0, "count": 0, "sum_means": 0.0, "sum_stds": 0.0, "q_count": 0},
+    }
     
     with torch.no_grad():
         while True:
@@ -214,45 +221,96 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
             
             for i, question_idx in enumerate(question_indices):
                 p_dir_name = f"{p_save_path}/{question_idx}"
-                
-                # Check if question data is already complete
+
+                # Already complete?
                 if os.path.exists(p_dir_name) and check_question_complete(p_dir_name, layer_list, sparse, network_density, aggregate_layers):
                     skipped_count += 1
                     if skipped_count % 50 == 0 or skipped_count <= 5:
                         logging.info(f"[Worker {worker_idx}] Skipped question {question_idx} (already processed). Total skipped: {skipped_count}")
                     continue
-                
-                # Process this question
-                os.makedirs(p_dir_name, exist_ok=True)
+
                 sentence_attention_mask = attention_mask[i]
-                
-                # Save correctness label
-                np.save(f"{p_dir_name}/label.npy", labels[i])
 
+                # Compute layer-average corr and validate
                 layer_average_hidden_states = hidden_states_layer_average[:, i, sentence_attention_mask == 1]
+                if layer_average_hidden_states.size == 0 or layer_average_hidden_states.shape[1] < 2:
+                    excluded_count += 1
+                    excluded_indices.append(int(question_idx))
+                    continue
                 layer_average_corr = np.corrcoef(layer_average_hidden_states)
-                np.save(f"{p_dir_name}/layer_average_corr.npy", layer_average_corr)
+                if not np.isfinite(layer_average_corr).all():
+                    excluded_count += 1
+                    excluded_indices.append(int(question_idx))
+                    continue
 
-                layer_average_activation = layer_average_hidden_states[:, -1]
-                np.save(f"{p_dir_name}/layer_average_activation.npy", layer_average_activation)
+                # Accumulate class stats from off-diagonal of layer-average corr
+                lbl = int(labels[i])
+                n = layer_average_corr.shape[0]
+                if n > 1:
+                    mask = ~np.eye(n, dtype=bool)
+                    vals = layer_average_corr[mask]
+                    vals = vals[np.isfinite(vals)]
+                    if vals.size > 0:
+                        class_stats[lbl]["sum"] += float(vals.sum())
+                        class_stats[lbl]["sum_sq"] += float((vals ** 2).sum())
+                        class_stats[lbl]["count"] += int(vals.size)
+                        class_stats[lbl]["sum_means"] += float(vals.mean())
+                        class_stats[lbl]["sum_stds"] += float(vals.std())
+                        class_stats[lbl]["q_count"] += 1
 
-                layer_average_degree = np.abs(layer_average_corr).sum(axis=1)
-                np.save(f"{p_dir_name}/layer_average_degree.npy", layer_average_degree)
-
-                np.save(f"{p_dir_name}/word2vec_average.npy", word2vec_embeddings[i])
-                np.save(f"{p_dir_name}/word2vec_token_count.npy", word_token_counts[i])
-
+                # Validate per-layer corrs before writing any files
                 per_layer_states = []
+                per_layer_corrs = []
+                invalid = False
                 for j, layer_idx in enumerate(layer_list):
                     layer_hidden_states = hidden_states[j, i]
                     sentence_hidden_states = layer_hidden_states[sentence_attention_mask == 1].T
+                    if sentence_hidden_states.shape[1] < 2:
+                        invalid = True
+                        break
                     per_layer_states.append(sentence_hidden_states)
                     corr = np.corrcoef(sentence_hidden_states)
-                    
+                    if not np.isfinite(corr).all():
+                        invalid = True
+                        break
+                    per_layer_corrs.append((layer_idx, corr))
+                if invalid:
+                    excluded_count += 1
+                    excluded_indices.append(int(question_idx))
+                    continue
+
+                # Combined layers validation if requested
+                combined_corr = None
+                combined_states = None
+                if aggregate_layers and len(per_layer_states) > 1:
+                    combined_states = np.concatenate(per_layer_states, axis=0)
+                    if combined_states.shape[1] < 2:
+                        excluded_count += 1
+                        excluded_indices.append(int(question_idx))
+                        continue
+                    combined_corr = np.corrcoef(combined_states)
+                    if not np.isfinite(combined_corr).all():
+                        excluded_count += 1
+                        excluded_indices.append(int(question_idx))
+                        continue
+
+                # Passed validation: now write outputs
+                os.makedirs(p_dir_name, exist_ok=True)
+                np.save(f"{p_dir_name}/label.npy", labels[i])
+
+                np.save(f"{p_dir_name}/layer_average_corr.npy", layer_average_corr)
+                layer_average_activation = layer_average_hidden_states[:, -1]
+                np.save(f"{p_dir_name}/layer_average_activation.npy", layer_average_activation)
+                layer_average_degree = np.abs(layer_average_corr).sum(axis=1)
+                np.save(f"{p_dir_name}/layer_average_degree.npy", layer_average_degree)
+                np.save(f"{p_dir_name}/word2vec_average.npy", word2vec_embeddings[i])
+                np.save(f"{p_dir_name}/word2vec_token_count.npy", word_token_counts[i])
+
+                percentile_threshold = network_density * 100
+                density_tag = f"{int(round(network_density * 100)):02d}"
+                for (layer_idx, corr), sentence_hidden_states in zip(per_layer_corrs, per_layer_states):
                     degree = np.abs(corr).sum(axis=1)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_degree.npy", degree)
-
-                    # Save pre-threshold dense correlation (NPY + image)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_corr.npy", corr)
                     try:
                         vmax = np.percentile(np.abs(corr), 99) if corr.size else 1.0
@@ -265,16 +323,10 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         plt.close()
                     except Exception:
                         pass
-
-                    # Compute thresholded dense correlation regardless of sparse flag
-                    percentile_threshold = network_density * 100
-                    density_tag = f"{int(round(network_density * 100)):02d}"
                     threshold = np.percentile(np.abs(corr), 100 - percentile_threshold)
                     corr_thresh = corr.copy()
                     corr_thresh[np.abs(corr_thresh) < threshold] = 0
                     np.fill_diagonal(corr_thresh, 1.0)
-
-                    # Save post-threshold dense correlation (NPY + image)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_corr_thresh_{density_tag}.npy", corr_thresh)
                     try:
                         vmax_t = np.percentile(np.abs(corr_thresh), 99) if corr_thresh.size else 1.0
@@ -287,30 +339,19 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         plt.close()
                     except Exception:
                         pass
-
-                    # If sparse mode, also save sparse representation from thresholded matrix
                     if sparse:
                         corr_t = torch.from_numpy(corr_thresh)
                         edge_index, edge_attr = dense_to_sparse(corr_t)
-                        edge_index = edge_index.numpy()
-                        edge_attr = edge_attr.numpy()
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_index.npy", edge_index)
-                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_attr.npy", edge_attr)
-
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_index.npy", edge_index.numpy())
+                        np.save(f"{p_dir_name}/layer_{layer_idx}_sparse_{density_tag}_edge_attr.npy", edge_attr.numpy())
                     activation = sentence_hidden_states[:, -1]
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation.npy", activation)
-
                     activation_avg = sentence_hidden_states.mean(-1)
                     np.save(f"{p_dir_name}/layer_{layer_idx}_activation_avg.npy", activation_avg)
 
-                if aggregate_layers and len(per_layer_states) > 1:
-                    combined_states = np.concatenate(per_layer_states, axis=0)
-                    combined_corr = np.corrcoef(combined_states)
-
+                if aggregate_layers and combined_states is not None and combined_corr is not None:
                     combined_degree = np.abs(combined_corr).sum(axis=1)
                     np.save(f"{p_dir_name}/layers_combined_degree.npy", combined_degree)
-
-                    # Save combined pre-threshold dense correlation (NPY + image)
                     np.save(f"{p_dir_name}/layers_combined_corr.npy", combined_corr)
                     try:
                         vmax_c = np.percentile(np.abs(combined_corr), 99) if combined_corr.size else 1.0
@@ -323,10 +364,6 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         plt.close()
                     except Exception:
                         pass
-
-                    # Compute and save combined thresholded dense correlation (NPY + image)
-                    percentile_threshold = network_density * 100
-                    density_tag = f"{int(round(network_density * 100)):02d}"
                     threshold = np.percentile(np.abs(combined_corr), 100 - percentile_threshold)
                     combined_corr_thresh = combined_corr.copy()
                     combined_corr_thresh[np.abs(combined_corr_thresh) < threshold] = 0
@@ -343,27 +380,35 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
                         plt.close()
                     except Exception:
                         pass
-
                     if sparse:
                         combined_corr_t = torch.from_numpy(combined_corr_thresh)
                         edge_index, edge_attr = dense_to_sparse(combined_corr_t)
-                        edge_index = edge_index.numpy()
-                        edge_attr = edge_attr.numpy()
-                        np.save(f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_index.npy", edge_index)
-                        np.save(f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_attr.npy", edge_attr)
-
+                        np.save(f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_index.npy", edge_index.numpy())
+                        np.save(f"{p_dir_name}/layers_combined_sparse_{density_tag}_edge_attr.npy", edge_attr.numpy())
                     combined_activation = combined_states[:, -1]
                     np.save(f"{p_dir_name}/layers_combined_activation.npy", combined_activation)
-
                     combined_activation_avg = combined_states.mean(-1)
                     np.save(f"{p_dir_name}/layers_combined_activation_avg.npy", combined_activation_avg)
-                
-                # Log progress
+
                 processed_count += 1
                 if processed_count % 100 == 0 or processed_count <= 10:
-                    logging.info(f"[Worker {worker_idx}] Processed question {question_idx}. Total processed: {processed_count}, Skipped: {skipped_count}")
+                    logging.info(f"[Worker {worker_idx}] Processed question {question_idx}. Total processed: {processed_count}, Skipped: {skipped_count}, Excluded(NaN): {excluded_count}")
     
-    logging.info(f"[Worker {worker_idx}] Finished processing. Total processed: {processed_count}, Total skipped: {skipped_count}")
+    # Write per-worker summaries for later merge
+    try:
+        with open(os.path.join(p_save_path, f"exclusions_worker_{worker_idx}.txt"), "w") as f:
+            for idx in excluded_indices:
+                f.write(str(idx) + "\n")
+        with open(os.path.join(p_save_path, f"summary_worker_{worker_idx}.json"), "w") as f:
+            json.dump({
+                "worker": worker_idx,
+                "counts": {"processed": processed_count, "skipped": skipped_count, "excluded_nan": excluded_count},
+                "class_stats": class_stats,
+            }, f)
+    except Exception as e:
+        logging.warning(f"[Worker {worker_idx}] Failed to write per-worker summary: {e}")
+
+    logging.info(f"[Worker {worker_idx}] Finished processing. Total processed: {processed_count}, Total skipped: {skipped_count}, Total excluded(NaN): {excluded_count}")
     print(f"Worker {worker_idx} finished processing.")
 
 

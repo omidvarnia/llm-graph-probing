@@ -924,6 +924,51 @@ try:
 except Exception as e:
     logging.warning(f"Could not write summary: {e}")
 
+# -----------------------------
+# Generate LaTeX Report
+# -----------------------------
+logging.info("\n" + "="*60)
+logging.info("Generating publication-ready LaTeX report...")
+logging.info("="*60)
+
+try:
+    from hallucination.generate_report import generate_latex_report
+    
+    latex_file = generate_latex_report(
+        model_name=model_name,
+        dataset_name=dataset_name,
+        reports_dir=reports_root,
+        layer_ids=layer_ids,
+        config=config,
+        step_results=step_results
+    )
+    
+    logging.info(f"✓ LaTeX report generated: {latex_file}")
+    logging.info(f"  Compile with: pdflatex {latex_file.name}")
+    logging.info(f"  Location: {latex_file.parent}")
+    
+    # Attempt to compile the LaTeX document
+    try:
+        result = subprocess.run(
+            ["pdflatex", "-interaction=nonstopmode", latex_file.name],
+            cwd=latex_file.parent,
+            capture_output=True,
+            timeout=60
+        )
+        if result.returncode == 0:
+            pdf_file = latex_file.with_suffix('.pdf')
+            logging.info(f"✓ PDF report compiled successfully: {pdf_file}")
+        else:
+            logging.warning("LaTeX compilation failed. Install pdflatex to enable automatic PDF generation.")
+            logging.info(f"  LaTeX source available at: {latex_file}")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        logging.info("pdflatex not available. LaTeX source file saved for manual compilation.")
+        logging.info(f"  Install texlive-latex-base to compile: sudo apt-get install texlive-latex-base texlive-latex-extra")
+        
+except Exception as e:
+    logging.warning(f"Could not generate LaTeX report: {e}")
+    logging.info("Continuing without report generation...")
+
 logging.info("\n" + "="*60)
 logging.info("✓ Graph Probing Analysis Complete!")
 logging.info("="*60)

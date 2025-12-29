@@ -4,7 +4,7 @@ from pathlib import Path
 import torch
 
 from hallucination.dataset import get_truthfulqa_dataloader, get_truthfulqa_linear_dataloader
-from hallucination.utils import test_fn
+from hallucination.utils import test_fn, select_device
 from utils.probing_model import GCNProbe as GCNClassifier, MLPProbe as MLPClassifier
 from utils.model_utils import get_num_nodes
 
@@ -52,8 +52,7 @@ def main(_):
     logging.info("Evaluating Hallucination Detection Probes")
     logging.info("="*60)
     
-    device = torch.device(f"cuda:{FLAGS.gpu_id}")
-    logging.info(f"Using device: {device}")
+    device = select_device(FLAGS.gpu_id)
 
     if FLAGS.use_constant_baseline:
         assert FLAGS.num_layers == 0, "Constant baseline requires num_layers=0."

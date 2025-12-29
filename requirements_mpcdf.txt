@@ -1,8 +1,11 @@
 # ***********************************
-# Requirements for MPCDF server
-# Install with:
-# pip install -r requirements.txt --no-build-isolation
-# The flag --no-build-isolation is needed for the installation of pytorch and its relevant components
+# Requirements for MPCDF server with ROCm 6.1
+# 
+# INSTALLATION (RECOMMENDED - handles ROCm compilation automatically):
+# bash install_rocm_env.sh
+#
+# ALTERNATIVE INSTALLATION (manual):
+# pip install -r requirements_mpcdf.txt
 # ***********************************
 absl-py==2.1.0
 accelerate==1.6.0
@@ -19,13 +22,11 @@ tensorboard==2.19.0
 # Install from PyTorch ROCm wheel repository
 # Note: Use version without '+rocm' suffix, as uv/pip will find the right wheel from index-url
 
-# For AMD GPUs with ROCm (MPCDF server with ROCm 7.0):
---index-url https://download.pytorch.org/whl/rocm6.1
+# For AMD GPUs with ROCm (MPCDF server with ROCm 6.1):
+--extra-index-url https://download.pytorch.org/whl/rocm6.1
 torch==2.5.1+rocm6.1
-torchvision==0.20.1
-torchaudio==2.5.1
-torch-scatter
-torch-sparse
+torchvision==0.20.1+rocm6.1
+torchaudio==2.5.1+rocm6.1
 
 # For NVIDIA GPUs with CUDA 12.1 (comment out ROCm lines above and uncomment below):
 # --index-url https://download.pytorch.org/whl/cu121

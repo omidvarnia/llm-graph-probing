@@ -18,7 +18,13 @@
 module purge
 module load gcc/14 openmpi/5.0 rocm/7.0
 
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+# Set OMP threads to a valid positive integer
+if [[ "${SLURM_CPUS_PER_TASK:-}" =~ ^[0-9]+$ ]] && [ "${SLURM_CPUS_PER_TASK}" -gt 0 ]; then
+    export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
+else
+    echo "WARNING: SLURM_CPUS_PER_TASK invalid; defaulting OMP_NUM_THREADS=1"
+    export OMP_NUM_THREADS=1
+fi
 
 # Set GPU visibility for ROCm/HIP - use SLURM_LOCALID for single GPU jobs
 if [ -n "${SLURM_LOCALID:-}" ]; then
