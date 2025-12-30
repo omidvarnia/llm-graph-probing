@@ -1,0 +1,405 @@
+# Video Segmentation Using LLM Features & Graph Neural Networks
+# Implementation Specification & Development Prompt
+
+## Project Overview
+
+Extend the existing hallucination detection pipeline to perform semantic video frame segmentation by:
+1. Replacing LLM text processing with LLM/Vision model image processing
+2. Extracting semantic features from video frames using vision-language models (CLIP, LLaVA)
+3. Computing correlations between image patches (identical logic to current pipeline)
+4. Training GCN for per-patch semantic segmentation (minor modifications to existing code)
+
+This maintains architectural loyalty to the existing pipeline while extending it to vision tasks.
+
+---
+
+## Core Architecture
+
+### Phase 1: Feature Extraction from Video Frames
+
+**Input**: Video file or sequence of frame images
+**Processing**: 
+  - Load frames from video
+  - Divide each frame into patches (e.g., 32×32 = 1024 patches per frame)
+  - Pass patches through vision LLM to extract semantic embeddings
+**Output**: Patch embeddings of shape (1024, feature_dim) per frame
+
+**Vision Model Options** (in priority order):
+  1. CLIP (openai/clip-vit-base-patch32) - 512-dim embeddings, fast
+  2. CLIP-ViT-Large - 768-dim embeddings, more descriptive
+  3. LLaVA (llava-hf/llava-1.5-7b-hf) - richer semantic understanding
+  4. DINOv2 - self-supervised vision features
+
+**Key Implementation Details**:
+  - Use pretrained models (no fine-tuning needed for feature extraction)
+  - Extract intermediate layer features for per-patch embeddings
+  - Normalize embeddings to unit norm for stable correlation computation
+  - Support batch processing of multiple frames for efficiency
+
+### Phase 2: Correlation Computation (Reuse Existing Code)
+
+**Input**: Patch embeddings (1024, feature_dim)
+**Processing**:
+  - Compute Pearson correlation between patch features across all dimensions
+  - Method: np.corrcoef(patch_embeddings.T) to get (1024, 1024) correlation matrix
+  - This is IDENTICAL to hallucination/compute_llm_network.py lines 263-265
+**Output**: Dense correlation matrix (1024, 1024)
+
+**No changes required** - reuse compute_llm_network.py logic directly
+
+### Phase 3: Graph Construction (Minor Adaptation)
+
+**Input**: Correlation matrix (1024, 1024)
+**Processing**:
+  - Threshold by magnitude (same as hallucination pipeline)
+  - Remove weak correlations: corr[|corr| < threshold] = 0
+  - Convert to sparse graph representation
+  - Add spatial positional information (optional enhancement)
+**Output**: PyTorch Geometric Data object with edge_index, edge_attr
+
+**Modifications**:
+  - Add spatial coordinates as node features (x, y position in image)
+  - Instead of: x = torch.arange(num_nodes)  # node IDs
+  - Use: x = spatial_coordinates(patch_positions)  # (1024, 2) - spatial positions
+  - This helps GCN understand image topology
+
+### Phase 4: Dataset & DataLoader Creation
+
+**File**: video_segmentation/dataset.py (new file, based on hallucination/dataset.py)
+
+**Class**: VideoSegmentationDataset
+
+**Constructor Parameters**:
+  - video_path: Path to video file or directory of frames
+  - segmentation_masks_path: Directory with ground-truth segmentation masks
+  - vision_model_name: Which vision model to use (clip, llava, dinov2)
+  - patch_size: Size of patches (default: 32 for CLIP)
+  - num_frames: Number of frames to process (or process all)
+  - density: Correlation threshold for sparsification (default: 0.05)
+
+**Key Methods**:
+  - _load_frame(frame_idx): Load single frame from video/directory
+  - _extract_patch_features(frame): Use vision model to get (1024, feature_dim)
+  - _compute_correlation(patch_features): np.corrcoef() call
+  - _build_graph(corr_matrix): dense_to_sparse() with spatial features
+  - _load_segmentation_mask(frame_idx): Load ground-truth labels (1024 patch labels)
+  - __getitem__(idx): Return Data(x, edge_index, edge_attr, y)
+
+**DataLoader Function**:
+  - get_video_segmentation_dataloader(): Return (train_loader, val_loader, test_loader)
+  - Supports train/val/test splits
+  - Handles batching across multiple frames
+
+### Phase 5: Model Architecture (Minimal Changes)
+
+**File**: Reuse utils/probing_model.py with one modification
+
+**Current Output** (Hallucination):
+  - Binary classification: outputs shape (batch_size,) with values ∈ [0, 1]
+  - Single logit per question
+
+**New Output** (Segmentation):
+  - Multi-class per-patch: outputs shape (batch_size, num_classes)
+  - One class prediction per patch (1024 patches → 1024 class predictions per frame)
+  - num_classes: Number of segmentation classes (e.g., 5 for person/road/building/sky/other)
+
+**Required Changes**:
+  - Modify forward() return dimension:
+    OLD: return output.squeeze(-1)  # (batch_size,)
+    NEW: return output  # (batch_size * 1024, num_classes)
+  - Update fc2 output dimension: Linear(hidden_channels, num_classes)
+  - Everything else stays identical (embedding, GCN convolutions, pooling)
+
+### Phase 6: Training Pipeline (Minor Modifications)
+
+**File**: video_segmentation/train.py (new file, based on hallucination/train.py)
+
+**Key Differences**:
+  1. Loss Function:
+     - OLD: F.cross_entropy(output, label)  # binary (batch_size,)
+     - NEW: F.cross_entropy(output, label)  # multi-class (batch_size*1024, num_classes)
+  
+  2. Evaluation Metric:
+     - OLD: Accuracy, Precision, Recall, F1 for binary classification
+     - NEW: IoU (Intersection over Union) per class, mIoU (mean IoU), Dice score
+  
+  3. Early Stopping:
+     - OLD: Based on F1 score
+     - NEW: Based on mIoU (mean Intersection over Union)
+  
+  4. Remaining Code:
+     - Optimizer, learning rate scheduler, warmup - IDENTICAL
+     - NaN/Inf guards - IDENTICAL
+     - Gradient clipping - IDENTICAL
+     - Label smoothing - IDENTICAL (adjust for multi-class)
+
+**Training Loop Structure** (reuse from hallucination/train.py):
+  - for epoch in range(num_epochs):
+    - for batch in train_loader:
+      - forward pass
+      - compute loss
+      - backward + optimizer step
+    - evaluate on validation set
+    - track best model by mIoU
+    - early stopping on mIoU plateau
+
+### Phase 7: Evaluation Pipeline (New)
+
+**File**: video_segmentation/eval.py
+
+**Metrics to Compute**:
+  1. Per-class IoU: TP / (TP + FP + FN) for each class
+  2. Mean IoU (mIoU): Average IoU across all classes
+  3. Dice Score: 2*TP / (2*TP + FP + FN)
+  4. Pixel Accuracy: Correctly classified patches / total patches
+  5. Confusion Matrix: Per-class predictions vs ground-truth
+
+**Output**:
+  - JSON file with all metrics
+  - Visualization: Segmentation masks overlaid on frames
+  - Per-frame and per-class statistics
+
+---
+
+## Configuration File Extension
+
+**File**: pipeline_config_video.yaml (new file based on pipeline_config_qwen.yaml)
+
+```yaml
+video_segmentation:
+  # Video input
+  video_path: /path/to/video.mp4          # Video file or directory of frames
+  segmentation_masks_path: /path/to/masks/ # Directory with ground-truth masks
+  num_frames: 1000                        # Number of frames to process (or -1 for all)
+  
+  # Vision model configuration
+  vision_model_name: clip                 # clip, llava, dinov2
+  vision_model_id: openai/clip-vit-base-patch32
+  patch_size: 32                          # CLIP uses 32×32 patches → 1024 patches per frame
+  feature_dim: 512                        # Output dimension of vision model
+  normalize_features: true                # L2 normalize embeddings before correlation
+  
+  # Correlation computation
+  density: 0.05                           # Network density threshold (0.05 = keep top 5%)
+  correlation_method: pearson             # pearson, cosine, or euclidean
+  
+  # Segmentation task
+  num_classes: 5                          # Number of segmentation classes
+  class_names: [person, road, building, sky, other]  # Class labels
+  
+  # GCN architecture (identical to hallucination)
+  num_layers: 3                           # GCN depth
+  hidden_channels: 32                     # Embedding dimension
+  dropout: 0.1                            # Dropout rate
+  spatial_features: true                  # Include patch coordinates as node features
+  
+  # Training hyperparameters (mostly identical)
+  batch_size: 16                          # Frames per batch
+  learning_rate: 0.0001
+  num_epochs: 100
+  label_smoothing: 0.1
+  gradient_clip: 1.0
+  warmup_epochs: 5
+  early_stop_patience: 200
+  
+  # Evaluation
+  eval_metrics: [miou, dice, pixel_accuracy]  # Metrics to track
+  eval_frequency: 10                      # Evaluate every N epochs
+  
+  # Output
+  project_dir: /u/aomidvarnia/GIT_repositories/llm-graph-probing
+  main_dir: /ptmp/aomidvarnia/analysis_results/llm_graph
+```
+
+---
+
+## Implementation Checklist
+
+### Phase 1: Setup
+- [ ] Create video_segmentation/ directory
+- [ ] Create pipeline_config_video.yaml
+- [ ] Create video_segmentation/__init__.py
+
+### Phase 2: Feature Extraction
+- [ ] Implement video_segmentation/feature_extractor.py
+  - [ ] load_vision_model()
+  - [ ] extract_frame_features()
+  - [ ] batch_extract_features()
+- [ ] Test with sample video frame
+
+### Phase 3: Dataset
+- [ ] Create video_segmentation/dataset.py
+  - [ ] VideoSegmentationDataset class
+  - [ ] get_video_segmentation_dataloader() function
+- [ ] Support train/val/test splits
+- [ ] Handle frame loading and mask loading
+
+### Phase 4: Model
+- [ ] Modify utils/probing_model.py
+  - [ ] Update fc2 output dimension
+  - [ ] Support num_classes parameter
+  - [ ] Test output shape: (batch_size*1024, num_classes)
+
+### Phase 5: Training
+- [ ] Create video_segmentation/train.py
+  - [ ] Reuse hallucination/train.py structure
+  - [ ] Modify loss to handle multi-class
+  - [ ] Change early stopping metric to mIoU
+- [ ] Add label smoothing for multi-class
+- [ ] Test training loop
+
+### Phase 6: Evaluation
+- [ ] Create video_segmentation/eval.py
+  - [ ] Compute IoU per class
+  - [ ] Compute mIoU
+  - [ ] Compute Dice score
+  - [ ] Generate visualizations
+- [ ] Output segmentation masks
+- [ ] Generate confusion matrices
+
+### Phase 7: Pipeline Script
+- [ ] Create video_segmentation/run_segmentation.py
+  - [ ] Argparse for config file
+  - [ ] Execute 5-step pipeline (feature extraction, correlation, graph build, train, eval)
+
+### Phase 8: Testing & Documentation
+- [ ] Test with sample video and segmentation masks
+- [ ] Create video_segmentation/README.md with usage examples
+- [ ] Benchmark performance vs. standard segmentation models
+- [ ] Document results
+
+---
+
+## Key Constraints (Stay Loyal to Existing Pipeline)
+
+1. **Correlation Computation**: MUST use np.corrcoef() - no changes
+2. **Graph Building**: Threshold and sparse conversion - IDENTICAL to hallucination/
+3. **GCN Architecture**: SimpleGCNConv and pooling - reuse utils/probing_model.py
+4. **Training Loop Structure**: Epoch iteration, optimizer, scheduler - reuse hallucination/train.py structure
+5. **Configuration Style**: YAML-based configuration matching pipeline_config_qwen.yaml
+6. **Gradient Clipping**: torch.nn.utils.clip_grad_norm() - IDENTICAL
+7. **Early Stopping**: Counter-based mechanism - adapt metric from F1 to mIoU
+
+---
+
+## Data Format Specifications
+
+### Input Video
+- Format: MP4, AVI, or directory of PNG/JPG frames
+- Frame resolution: Any (will be divided into 1024 patches)
+- Frames per video: Flexible (configured in config)
+
+### Ground-Truth Segmentation Masks
+- Format: PNG images (8-bit or 32-bit)
+- Dimensions: Identical to video frames
+- Values: 0 to num_classes-1 (class labels)
+- Directory structure: masks/frame_0001.png, masks/frame_0002.png, etc.
+
+### Output Format
+```
+results/video_segmentation/
+├── config.yaml                    # Configuration used
+├── model/
+│   └── best_model.pth            # Trained GCN weights
+├── predictions/
+│   ├── frame_0001_pred.png       # Predicted segmentation mask
+│   ├── frame_0002_pred.png
+│   └── ...
+├── visualizations/
+│   ├── frame_0001_overlay.png    # Prediction overlaid on frame
+│   ├── frame_0002_overlay.png
+│   └── ...
+├── metrics.json                  # Per-class IoU, mIoU, Dice scores
+├── confusion_matrix.png          # Class confusion matrix
+└── training_log.txt              # Training history
+```
+
+---
+
+## Expected Performance & Benchmarks
+
+**Baseline Expectations**:
+- mIoU: 45-65% (depending on dataset difficulty and class count)
+- Training time: 30-120 minutes per video (varies with frame count and model size)
+- Inference: ~100-500ms per frame (depends on GPU and feature extractor)
+
+**Comparison Target**:
+- Standard CNN-based segmentation (DeepLab, U-Net): 70-85% mIoU
+- Transformer-based segmentation (SETR, Swin): 75-90% mIoU
+- Vision LLM + GCN approach: Expected 55-75% mIoU (simpler, more interpretable)
+
+---
+
+## Research Questions & Extensions
+
+1. **Does semantic correlation capture spatial information?**
+   - Compare with spatial-only graphs (image adjacency)
+   
+2. **How does vision model choice affect segmentation?**
+   - Test CLIP vs. LLaVA vs. DINOv2
+   
+3. **Can this approach transfer across domains?**
+   - Train on one video, test on different videos
+   
+4. **How interpretable are learned GCN embeddings?**
+   - Visualize what GCN learns about each patch
+   
+5. **Can multi-task learning help?**
+   - Simultaneously segment and classify (binary: foreground/background)
+
+---
+
+## References to Existing Code
+
+- **Correlation computation**: hallucination/compute_llm_network.py lines 263-265
+- **Graph building**: hallucination/dataset.py lines 71-88
+- **GCN model**: utils/probing_model.py SimpleGCNConv class
+- **Training loop**: hallucination/train.py train_model() function
+- **Configuration**: pipeline_config_qwen.yaml
+
+---
+
+## Success Criteria
+
+1. ✓ Feature extraction from video frames using vision LLM
+2. ✓ Correlation computation identical to hallucination pipeline
+3. ✓ GCN training on frame segmentation task
+4. ✓ mIoU evaluation metric implementation
+5. ✓ End-to-end pipeline execution on sample video
+6. ✓ Output segmentation masks and visualization
+7. ✓ Configuration-driven pipeline (no hardcoded paths)
+8. ✓ Documentation and usage examples
+
+---
+
+## Timeline Estimate
+
+- Phase 1-2 (Setup + Feature Extraction): 2-3 days
+- Phase 3-4 (Dataset + Model): 2-3 days
+- Phase 5-6 (Training + Evaluation): 2-3 days
+- Phase 7-8 (Integration + Testing): 2-3 days
+- **Total**: 1-2 weeks of development time
+
+---
+
+## Questions for Implementation
+
+1. What segmentation dataset should be used for testing? (COCO, Cityscapes, custom)
+2. Should spatial positional features be optional or mandatory?
+3. Should training support class weights for imbalanced datasets?
+4. Should inference support streaming (frame-by-frame) or batch processing?
+5. How should results be visualized and compared with baselines?
+
+---
+
+## Notes
+
+- This specification maintains 95% code reuse from existing pipeline
+- The core insight: correlation computation works on ANY embedded features (text neurons → image patches)
+- Vision LLMs provide semantic understanding without task-specific training
+- GCN learns how semantic relationships indicate segmentation boundaries
+- This approach is novel and potentially publishable if results are strong
+
+---
+
+END OF SPECIFICATION

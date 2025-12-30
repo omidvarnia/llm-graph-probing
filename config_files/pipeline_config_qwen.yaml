@@ -58,7 +58,7 @@ common:
   hidden_channels: 32                   # GNN hidden size (same as reference)
   gpu_id: 0                             # GPU index to use
   from_sparse_data: true                # Expect sparse FC inputs
-  early_stop_patience: 20               # Early stopping patience (epochs)
+  early_stop_patience: 200               # Early stopping patience (epochs)
   aggregate_layers: false               # Also save combined FC across provided layers
   project_dir: /u/aomidvarnia/GIT_repositories/llm-graph-probing  # Root of this repo
   main_dir: /ptmp/aomidvarnia/analysis_results/llm_graph          # Root output directory
@@ -67,10 +67,10 @@ hallucination:
   batch_size: 16                        # LLM forward batch size
   probe_input: corr                     # Probe input type: corr or activation (reference uses corr)
   eval_batch_size: 32                   # Eval batch size for probe
-  learning_rate: 0.001                  # Probe optimizer learning rate (reference uses 0.001)
-  num_epochs: 100                       # Max probe training epochs (reference uses 10, but we use 100 with early stopping)
+  learning_rate: 0.0001                  # Probe optimizer learning rate (reference uses 0.001)
+  num_epochs: 200                       # Max probe training epochs (reference uses 10, but we use 100 with early stopping)
   label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
-  gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)
+  gradient_clip: 9999999                    # Max gradient norm for clipping (prevents exploding gradients)
   warmup_epochs: 5                      # Number of warmup epochs for learning rate scheduler
 
 neuropathology:

@@ -54,8 +54,7 @@ class SimpleGCNConv(nn.Module):
         messages = torch.nan_to_num(x[src])
         if edge_weight is not None:
             ew = torch.nan_to_num(edge_weight, nan=0.0, posinf=0.0, neginf=0.0)
-            # Correlations are expected in [-1,1]; clamp for stability
-            ew = ew.clamp(min=-1.0, max=1.0)
+            ew = torch.abs(ew)
             messages = messages * ew.view(-1, 1)
         out = torch.zeros_like(x)
         out.index_add_(0, dst, messages)

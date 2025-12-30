@@ -44,7 +44,7 @@ JOB_START_TIME=$(date +%s)
 # =============================================================================
 # Paths (usually don't need to change these)
 # =============================================================================
-CONFIG_FILE=/u/aomidvarnia/GIT_repositories/llm-graph-probing/pipeline_config_qwen.yaml
+CONFIG_FILE=/u/aomidvarnia/GIT_repositories/llm-graph-probing/config_files/pipeline_config_qwen.yaml
 ENV_PATH=/ptmp/aomidvarnia/uv_envs/llm_graph
 PYTHON=${ENV_PATH}/bin/python
 

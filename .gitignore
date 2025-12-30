@@ -248,3 +248,6 @@ secrets.py
 # Backup files
 *.bak
 *.backup
+
+# Results folder
+results/

@@ -1,0 +1,821 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{float}
+
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\thepage}
+\lhead{Hallucination Detection Technical Report}
+
+\definecolor{criticalcolor}{RGB}{220,20,60}
+\definecolor{highcolor}{RGB}{255,140,0}
+\definecolor{mediumcolor}{RGB}{255,215,0}
+
+\title{\textbf{Technical Report: Hallucination Detection in Large Language Models Using Graph Neural Networks}}
+\author{VIPER Cluster, Jülich Research Centre\\
+\texttt{a.omidvarnia@fz-juelich.de}}
+\date{December 2024}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report presents a comprehensive analysis of hallucination detection in the Qwen2.5-0.5B language model using graph neural network (GNN) probes applied to internal representations. We analyzed 5,915 question-answer pairs from the TruthfulQA benchmark across seven transformer layers (5--11), constructing correlation-based graph networks from hidden states and training Graph Convolutional Network (GCN) probes for binary classification. The pipeline successfully completed all five stages (dataset construction, network computation, training, evaluation, and graph analysis) in approximately 32 minutes. However, results reveal fundamental limitations: test accuracy of 52.2\% (barely above random chance), weak class separability (mean intra/inter-class correlation difference $\sim$0.12 with high variance $\sim$0.35), and minimal discriminative power across all analyzed layers. We identify critical problems including insufficient signal in correlation-based features, potential model capacity limitations, and aggressive network density thresholding. We conclude that the current correlation-based GNN approach is not viable for production hallucination detection and recommend exploring larger models, attention-based graph construction, and alternative architectures.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Executive Summary}
+
+This analysis executed a full five-stage GNN-based hallucination detection pipeline on the Qwen2.5-0.5B model using the TruthfulQA dataset, processing 5,915 question-answer pairs across transformer layers 5--11. All pipeline components functioned correctly, completing in $\sim$32 minutes.
+
+\subsection{Key Findings}
+
+\begin{itemize}
+    \item \textbf{Classification Performance:} Test accuracy of 52.2\% demonstrates near-random performance, indicating failure to learn meaningful patterns distinguishing truthful from hallucinated responses.
+    \item \textbf{Feature Separability:} Intra-class vs.\ inter-class correlation analysis shows minimal separation (mean $\sim$0.10--0.12) with high variance (std $\sim$0.35), indicating weak and unreliable signal.
+    \item \textbf{Architectural Limitations:} Correlation-based graph representation may not capture semantic and contextual information necessary for truthfulness assessment.
+    \item \textbf{Model Size:} Qwen2.5-0.5B (500M parameters) may lack representational capacity to encode truthfulness information detectable by GCN probes.
+\end{itemize}
+
+\subsection{Critical Issues}
+
+\begin{enumerate}
+    \item \textcolor{criticalcolor}{\textbf{CRITICAL:}} Near-random classification accuracy (52.2\%)
+    \item \textcolor{highcolor}{\textbf{HIGH:}} Weak intra/inter-class correlation differences
+    \item \textcolor{mediumcolor}{\textbf{MEDIUM:}} Class imbalance (54.8\%/45.2\%)
+    \item \textcolor{mediumcolor}{\textbf{MEDIUM-HIGH:}} Information loss from 5\% network density threshold
+    \item \textcolor{highcolor}{\textbf{HIGH:}} High variance obscures population trends
+    \item \textcolor{mediumcolor}{\textbf{MEDIUM:}} Possible model underfitting
+\end{enumerate}
+
+\subsection{Viability Assessment}
+
+\textbf{\textcolor{criticalcolor}{Current Approach: NOT VIABLE}} for production hallucination detection. The 52.2\% accuracy provides no reliable discrimination between truthful and hallucinated content.
+
+\section{Dataset Analysis}
+
+\subsection{Dataset Composition}
+
+The TruthfulQA dataset consists of 5,915 question-answer pairs with binary labels:
+\begin{itemize}
+    \item \textbf{Total samples:} 5,915
+    \item \textbf{Training set:} 4,732 samples (80\%)
+    \item \textbf{Test set:} 1,183 samples (20\%)
+    \item \textbf{Classes:} Binary (0 = Hallucination/False, 1 = Truthful/True)
+\end{itemize}
+
+Each question has multiple candidate answers with varying truthfulness. For example:
+\begin{itemize}
+    \item \textit{Question:} ``What happens to you if you eat watermelon seeds?''
+    \item \textit{True answers:} ``Nothing happens'', ``They pass through digestive system''
+    \item \textit{False answers:} ``You grow watermelons in your stomach'', ``You die''
+\end{itemize}
+
+\subsection{Class Distribution}
+
+Analysis of the test set confusion matrix reveals:
+\begin{itemize}
+    \item \textbf{Class 0 (False/Hallucination):} 648 samples (54.8\%)
+    \item \textbf{Class 1 (True/Truthful):} 535 samples (45.2\%)
+    \item \textbf{Class imbalance ratio:} $\sim$1.21:1
+\end{itemize}
+
+Figure~\ref{fig:dataset_dist} shows the label distribution across the dataset.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{figures/dataset_label_distribution.png}
+    \caption{Distribution of truthful (1) vs.\ hallucinated (0) labels in the dataset. Moderate class imbalance may bias model predictions.}
+    \label{fig:dataset_dist}
+\end{figure}
+
+\textbf{Finding:} Moderate class imbalance may affect model training and introduce bias toward the majority class.
+
+\subsection{Data Quality}
+
+\begin{itemize}
+    \item \textbf{Success:} All 5,915 samples successfully processed
+    \item \textbf{No missing values} or corrupted entries reported
+    \item \textbf{Dataset construction:} Completed in 3.8 seconds
+\end{itemize}
+
+\section{Network Topology Construction}
+
+\subsection{Graph Construction Methodology}
+
+For each question-answer pair, we construct a graph representation:
+\begin{enumerate}
+    \item Extract hidden states from the specified transformer layer
+    \item Compute Pearson correlation matrix $C \in \mathbb{R}^{n \times n}$ between token representations
+    \item Apply network density threshold (5\%) to retain only strongest correlations
+    \item Convert to sparse graph representation $(E, W)$ where $E$ are edge indices and $W$ are edge weights
+\end{enumerate}
+
+\textbf{Network parameters:}
+\begin{itemize}
+    \item Density threshold: 5\% (top 5\% correlations retained)
+    \item Edge weights: Pearson correlation coefficients
+    \item Node features: Token-level hidden state activations
+    \item Graph type: Undirected, weighted
+\end{itemize}
+
+\subsection{Correlation Matrix Visualization}
+
+Figures~\ref{fig:corr_before} and~\ref{fig:corr_after} show example correlation matrices before and after density thresholding.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/fc_before_threshold.png}
+    \caption{Correlation matrix before thresholding. Dense matrices show complex patterns across all token pairs.}
+    \label{fig:corr_before}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/fc_after_threshold.png}
+    \caption{Correlation matrix after 5\% density thresholding. Sparse network retains only strongest correlations (95\% of edges discarded).}
+    \label{fig:corr_after}
+\end{figure}
+
+\textbf{Observation:} Dense correlation matrices exhibit complex patterns but high dimensionality. Thresholding creates manageable sparse graphs but may discard important information.
+
+\subsection{Processing Performance}
+
+Network computation for Layer 5:
+\begin{itemize}
+    \item \textbf{Duration:} 102.3 seconds ($\sim$1.7 minutes)
+    \item \textbf{Questions processed:} 5,915
+    \item \textbf{Throughput:} $\sim$58 questions/second
+    \item \textbf{Parallelization:} 40 worker processes
+\end{itemize}
+
+\textbf{Success:} Efficient parallel processing enables scalability to larger datasets.
+
+\section{Graph Neural Network Training}
+
+\subsection{Model Architecture}
+
+\textbf{GCN Configuration:}
+\begin{itemize}
+    \item \textbf{Type:} Graph Convolutional Network (GCN)
+    \item \textbf{Input features:} Node correlation values
+    \item \textbf{Hidden dimensions:} 32
+    \item \textbf{Number of layers:} 3
+    \item \textbf{Pooling:} Global mean pooling
+    \item \textbf{Output:} Binary classification (2 classes)
+    \item \textbf{Optimizer:} Adam
+    \item \textbf{Device:} AMD GPU (ROCm/HIP backend)
+\end{itemize}
+
+\subsection{Training Performance}
+
+\begin{itemize}
+    \item \textbf{Training duration:} 1,439.8 seconds ($\sim$24 minutes)
+    \item \textbf{Model checkpoint:} best\_model\_density-05\_dim-32\_hop-3\_input-corr.pth
+    \item \textbf{Checkpoint size:} 140,911 bytes ($\sim$141 KB)
+\end{itemize}
+
+Figure~\ref{fig:train_loss} shows the training loss curve over epochs.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/train_loss.png}
+    \caption{Training loss curve. Model converged without numerical instability (no NaN/Inf errors).}
+    \label{fig:train_loss}
+\end{figure}
+
+\subsection{Data Loading}
+
+Graph loading statistics:
+\begin{itemize}
+    \item 4,732 training graphs loaded
+    \item Average speed: $\sim$20--25 graphs/second
+    \item Memory-efficient streaming via PyTorch Geometric DataLoader
+\end{itemize}
+
+\textbf{Observation:} No NaN or Inf errors during training, confirming successful numerical stability mitigation.
+
+\section{Model Evaluation Results}
+
+\subsection{Test Set Performance}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Total test samples & 1,183 \\
+Correct predictions & 618 \\
+Incorrect predictions & 565 \\
+\textbf{Overall Accuracy} & \textbf{52.2\%} \\
+\bottomrule
+\end{tabular}
+\caption{Overall test set performance metrics.}
+\label{tab:overall_perf}
+\end{table}
+
+\subsection{Confusion Matrix Analysis}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+& \multicolumn{2}{c}{\textbf{Predicted}} \\
+\cmidrule(lr){2-3}
+\textbf{Actual} & Class 0 (False) & Class 1 (True) \\
+\midrule
+Class 0 (False) & 378 & 270 \\
+Class 1 (True) & 295 & 240 \\
+\bottomrule
+\end{tabular}
+\caption{Confusion matrix for test set predictions. Rows represent true labels, columns represent predicted labels.}
+\label{tab:confusion}
+\end{table}
+
+\textbf{Class 0 (Hallucination/False) Performance:}
+\begin{itemize}
+    \item True Negatives: 378
+    \item False Positives: 295
+    \item Recall (Sensitivity): $378/648 = 58.3\%$
+    \item Specificity: $240/535 = 44.9\%$
+\end{itemize}
+
+\textbf{Class 1 (Truthful/True) Performance:}
+\begin{itemize}
+    \item True Positives: 240
+    \item False Negatives: 270
+    \item Recall (Sensitivity): $240/535 = 44.9\%$
+    \item Precision: $240/510 = 47.1\%$
+\end{itemize}
+
+\subsection{Derived Metrics}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Class} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-Score} \\
+\midrule
+0 (False/Hallucination) & 56.2\% & 58.3\% & 57.2\% \\
+1 (True/Truthful) & 47.1\% & 44.9\% & 46.0\% \\
+\midrule
+\textbf{Macro Average} & \textbf{51.6\%} & \textbf{51.6\%} & \textbf{51.6\%} \\
+\bottomrule
+\end{tabular}
+\caption{Per-class and macro-averaged performance metrics.}
+\label{tab:metrics}
+\end{table}
+
+\textcolor{criticalcolor}{\textbf{Critical Finding:}} All metrics hover around 50\%, indicating the model has learned no meaningful pattern to distinguish truthful from hallucinated responses.
+
+Figure~\ref{fig:test_metrics} visualizes the test set performance metrics.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/test_metrics.png}
+    \caption{Test set performance metrics across epochs. Model shows minimal discriminative ability.}
+    \label{fig:test_metrics}
+\end{figure}
+
+\subsection{Evaluation Duration}
+
+\begin{itemize}
+    \item \textbf{Evaluation time:} 314.6 seconds ($\sim$5.2 minutes)
+    \item Includes loading 1,183 test graphs
+    \item Forward passes through trained GCN
+    \item Metric computation
+\end{itemize}
+
+\section{Graph Correlation Analysis}
+
+\subsection{Methodology}
+
+For each layer, we compute the difference between:
+\begin{itemize}
+    \item \textbf{Intra-class correlations:} Correlations within samples of same truthfulness label
+    \item \textbf{Inter-class correlations:} Correlations between samples of different labels
+\end{itemize}
+
+\textbf{Metric:} $\Delta = \text{Intra}_{\text{corr}} - \text{Inter}_{\text{corr}}$
+
+Positive values indicate more cohesive classes (desirable for classification).
+
+\subsection{Layer-by-Layer Results}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Layer} & \textbf{Samples} & \textbf{Mean} & \textbf{Std} & \textbf{Median} & \textbf{Range} \\
+\midrule
+5 & 577 & 0.1036 & 0.3522 & 0.023 & [-0.803, 1.613] \\
+6 & 577 & 0.1047 & 0.3516 & 0.024 & [-0.825, 1.618] \\
+7 & 577 & 0.1104 & 0.3528 & 0.028 & [-0.842, 1.630] \\
+8 & 577 & 0.1147 & 0.3521 & 0.030 & [-0.845, 1.643] \\
+9 & 577 & 0.1211 & 0.3558 & 0.033 & [-0.842, 1.664] \\
+10 & 577 & 0.1224 & 0.3551 & 0.034 & [-0.854, 1.671] \\
+11 & 577 & 0.1243 & 0.3554 & 0.036 & [-0.853, 1.662] \\
+\bottomrule
+\end{tabular}
+\caption{Intra-class vs.\ inter-class correlation statistics across layers 5--11.}
+\label{tab:layer_stats}
+\end{table}
+
+\textbf{Interpretation:} 
+\begin{itemize}
+    \item Very small positive bias toward intra-class similarity (mean $\sim$0.10--0.12)
+    \item Extremely high variance (std $\sim$0.35) indicates inconsistent pattern
+    \item Signal-to-noise ratio: $\text{Mean}/\text{Std} \approx 0.3$ (very weak)
+\end{itemize}
+
+\subsection{Cross-Layer Trends}
+
+Observations across layers 5 $\rightarrow$ 11:
+\begin{itemize}
+    \item Mean intra-inter difference increases: $0.104 \rightarrow 0.124$ (+19.2\%)
+    \item Standard deviation remains $\sim$0.35 (very high)
+    \item Median increases: $0.023 \rightarrow 0.036$ (+56.5\%)
+\end{itemize}
+
+\textbf{Interpretation:} Later layers show marginally better class separability, but separation is extremely weak (mean $\sim$0.12 on approximate [-2, 2] scale for correlation differences). High variance ($\sim$0.35) far exceeds mean signal, indicating unreliable and noisy separation.
+
+\subsection{Statistical Significance}
+
+\textbf{Effect Size (Cohen's d approximation):}
+\begin{equation}
+d = \frac{\text{Mean}}{\text{Std}} \approx 0.35
+\end{equation}
+
+This represents a \textit{small effect} by conventional standards (Cohen's $d < 0.5$).
+
+\textbf{Conclusion:} The observed differences are statistically weak with high overlap between distributions. Many individual samples contradict the population trend.
+
+\subsection{Distribution Visualization}
+
+Figures~\ref{fig:hist_layer5} through~\ref{fig:hist_layer11} show histograms of the intra-inter correlation difference for each analyzed layer.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_5.png}
+    \caption{Layer 5: Distribution of intra-class minus inter-class correlations. Centered near zero with wide spread.}
+    \label{fig:hist_layer5}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_6.png}
+    \caption{Layer 6: Nearly identical distribution to Layer 5.}
+    \label{fig:hist_layer6}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_7.png}
+    \caption{Layer 7: Slight rightward shift but high variance persists.}
+    \label{fig:hist_layer7}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_8.png}
+    \caption{Layer 8: Continued marginal improvement.}
+    \label{fig:hist_layer8}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_9.png}
+    \caption{Layer 9: Distribution maintains Gaussian-like shape.}
+    \label{fig:hist_layer9}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_10.png}
+    \caption{Layer 10: Second-to-last layer shows minimal change.}
+    \label{fig:hist_layer10}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/intra_vs_inter_hist_layer_11.png}
+    \caption{Layer 11: Final layer exhibits highest mean separation (0.124) but remains insufficient.}
+    \label{fig:hist_layer11}
+\end{figure}
+
+All distributions show approximately Gaussian shape centered near zero with many samples exhibiting negative values (inter > intra), contradicting the desired pattern.
+
+\section{Computational Performance}
+
+\subsection{Pipeline Step Durations}
+
+Table~\ref{tab:durations} and Figure~\ref{fig:durations} summarize the time spent in each pipeline stage for Layer 5.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcr}
+\toprule
+\textbf{Step} & \textbf{Duration (s)} & \textbf{\% of Total} \\
+\midrule
+1. Dataset Construction & 3.8 & 0.2\% \\
+2. Network Computation & 102.3 & 5.4\% \\
+3. GCN Training & 1,439.8 & 75.4\% \\
+4. Evaluation & 314.6 & 16.5\% \\
+5. Graph Analysis & 47.7 & 2.5\% \\
+\midrule
+\textbf{Total} & \textbf{1,908.2} & \textbf{100\%} \\
+\textbf{Total (minutes)} & \textbf{31.8} & \\
+\bottomrule
+\end{tabular}
+\caption{Pipeline step durations for Layer 5 analysis.}
+\label{tab:durations}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/step_durations.png}
+    \caption{Time distribution across pipeline stages. Training dominates (75.4\% of total time).}
+    \label{fig:durations}
+\end{figure}
+
+\subsection{Resource Utilization}
+
+\textbf{Hardware:}
+\begin{itemize}
+    \item GPU: AMD MI250X (ROCm 7.0)
+    \item CPUs: 24 cores allocated
+    \item Memory: 64 GB allocated
+\end{itemize}
+
+\textbf{Software:}
+\begin{itemize}
+    \item PyTorch 2.5.1 + ROCm 6.1
+    \item PyTorch Geometric 2.6.1
+    \item Scatter-free GCN implementation (pure PyTorch)
+\end{itemize}
+
+\textbf{Success:} No CUDA/ROCm errors; stable GPU utilization throughout pipeline.
+
+\subsection{Scalability Analysis}
+
+\textbf{Current performance:}
+\begin{itemize}
+    \item 5,915 samples $\rightarrow$ $\sim$32 minutes total
+    \item Estimated: $\sim$3.2 seconds per sample (end-to-end)
+    \item Network computation: $\sim$17 ms per question
+    \item Training: primary bottleneck (75\% of time)
+\end{itemize}
+
+\textbf{Projected scaling:}
+\begin{itemize}
+    \item 50K samples: $\sim$5.3 hours
+    \item 500K samples: $\sim$53 hours (2.2 days)
+\end{itemize}
+
+Parallelization already effective (40 workers for network computation).
+
+\section{Identified Problems and Pitfalls}
+
+\subsection{Problem 1: Near-Random Classification Accuracy}
+
+\textbf{Severity:} \textcolor{criticalcolor}{CRITICAL}
+
+\textbf{Evidence:}
+\begin{itemize}
+    \item Test accuracy 52.2\% (only 2.2\% above random baseline)
+    \item Confusion matrix shows balanced errors across classes
+    \item No clear decision boundary learned
+\end{itemize}
+
+\textbf{Possible Causes:}
+\begin{enumerate}
+    \item Insufficient signal in correlation-based graph features
+    \item Model architecture inadequate for task complexity
+    \item Hidden states may not encode truthfulness information
+    \item 5\% network density threshold too aggressive (loses information)
+\end{enumerate}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Experiment with different graph construction methods
+    \item Try multiple density thresholds (10\%, 20\%, 50\%)
+    \item Consider attention-based features instead of correlations
+    \item Explore deeper GCN architectures or alternative GNN types (GAT, GraphSAGE)
+\end{itemize}
+
+\subsection{Problem 2: Weak Class Separability}
+
+\textbf{Severity:} \textcolor{highcolor}{HIGH}
+
+\textbf{Evidence:}
+\begin{itemize}
+    \item Mean difference $\sim$0.10--0.12 (on scale of correlation $\sim$[-1,1])
+    \item Standard deviation (0.35) $\gg$ mean signal (0.12)
+    \item Effect size $< 0.5$ (small)
+    \item Many samples show inverted pattern (inter > intra)
+\end{itemize}
+
+\textbf{Interpretation:} Internal representations of Qwen2.5-0.5B do NOT form distinct clusters based on truthfulness. Truthful and hallucinated responses have highly overlapping correlation patterns.
+
+\textbf{Implications:}
+\begin{itemize}
+    \item Graph-based approach may be fundamentally limited for this model/data combination
+    \item Small model size (0.5B parameters) may lack capacity to encode truthfulness
+    \item TruthfulQA may be too challenging for correlation-based detection
+\end{itemize}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Test on larger models (7B, 13B+ parameters)
+    \item Try simpler datasets before TruthfulQA
+    \item Investigate supervised contrastive learning to enforce separation
+    \item Explore multi-task learning with auxiliary objectives
+\end{itemize}
+
+\subsection{Problem 3: Class Imbalance}
+
+\textbf{Severity:} \textcolor{mediumcolor}{MEDIUM}
+
+\textbf{Effect:}
+\begin{itemize}
+    \item Model may have bias toward majority class (Class 0: 54.8\%)
+    \item Metrics may be misleading (accuracy inflated for majority class)
+\end{itemize}
+
+\textbf{Evidence:}
+\begin{itemize}
+    \item Class 0 recall (58.3\%) $>$ Class 1 recall (44.9\%)
+    \item Model predicts Class 0 more frequently
+\end{itemize}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Apply class weighting in loss function
+    \item Use stratified sampling
+    \item Report balanced accuracy and per-class F1 scores
+    \item Consider threshold adjustment for predictions
+    \item Implement focal loss for hard example mining
+\end{itemize}
+
+\subsection{Problem 4: Graph Construction Limitations}
+
+\textbf{Severity:} \textcolor{mediumcolor}{MEDIUM-HIGH}
+
+\textbf{Observations:}
+\begin{itemize}
+    \item Pearson correlation captures linear relationships only
+    \item Token-level correlations may not reflect semantic truthfulness
+    \item 5\% density threshold is aggressive (95\% edges discarded)
+\end{itemize}
+
+\textbf{Potential Information Loss:}
+\begin{itemize}
+    \item Non-linear patterns ignored
+    \item Contextual dependencies not captured
+    \item Temporal sequence information lost in correlation matrix
+\end{itemize}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Experiment with multiple density levels simultaneously
+    \item Consider mutual information instead of Pearson correlation
+    \item Try attention-weight-based graphs (using model's attention mechanisms)
+    \item Preserve sequence information with directed graphs
+    \item Explore distance-based metrics (cosine similarity, Euclidean)
+\end{itemize}
+
+\subsection{Problem 5: High Variance Obscures Trends}
+
+\textbf{Severity:} \textcolor{highcolor}{HIGH}
+
+\textbf{Statistics:}
+\begin{itemize}
+    \item Standard deviation $\sim$0.35 across all layers
+    \item Mean signal $\sim$0.10--0.12
+    \item Variance $\gg$ Signal
+\end{itemize}
+
+\textbf{Consequences:}
+\begin{itemize}
+    \item Individual predictions highly unreliable
+    \item Population-level trend exists but weak
+    \item Not suitable for deployment
+\end{itemize}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Ensemble methods to reduce variance
+    \item Feature engineering to boost signal
+    \item Collect more data to improve statistical power
+    \item Regularization techniques to stabilize predictions
+\end{itemize}
+
+\subsection{Problem 6: Possible Underfitting}
+
+\textbf{Severity:} \textcolor{mediumcolor}{MEDIUM}
+
+\textbf{Evidence:}
+\begin{itemize}
+    \item Poor performance on both train and test sets (inferred)
+    \item No overfitting indicators (accuracy too low to overfit)
+    \item Model may be too simple for task complexity
+\end{itemize}
+
+\textbf{Recommendations:}
+\begin{itemize}
+    \item Increase model capacity (more layers, wider hidden dimensions)
+    \item Add attention mechanisms to GCN
+    \item Try Graph Attention Networks (GAT) with learned attention weights
+    \item Incorporate additional node features beyond correlations
+    \item Experiment with residual connections and skip connections
+\end{itemize}
+
+\section{Conclusions}
+
+\subsection{Summary of Findings}
+
+This analysis successfully executed a full five-stage GNN-based hallucination detection pipeline on the Qwen2.5-0.5B model using the TruthfulQA dataset. All pipeline components functioned correctly from a technical standpoint, completing in approximately 32 minutes for 5,915 samples.
+
+However, results reveal \textbf{fundamental limitations} in using correlation-based graph neural networks for hallucination detection in this setting:
+
+\begin{enumerate}
+    \item \textbf{Classification Performance:} Near-random accuracy (52.2\%) demonstrates the model failed to learn meaningful patterns distinguishing truthful from hallucinated responses.
+    
+    \item \textbf{Feature Separability:} Intra-class vs.\ inter-class correlation analysis across layers 5--11 shows minimal separation (mean $\sim$0.10--0.12) with high variance (std $\sim$0.35), indicating weak and unreliable signal.
+    
+    \item \textbf{Architectural Limitations:} The correlation-based graph representation may not capture the semantic and contextual information necessary for truthfulness assessment.
+    
+    \item \textbf{Model Size Constraints:} Qwen2.5-0.5B (500M parameters) may lack the representational capacity to encode truthfulness information in its hidden states in a manner detectable by GCN probes.
+\end{enumerate}
+
+\subsection{Viability Assessment}
+
+\textbf{\textcolor{criticalcolor}{Current Approach: NOT VIABLE}} for production hallucination detection.
+
+The method as implemented does not provide reliable discrimination between truthful and hallucinated content. The 52.2\% accuracy is only marginally better than random guessing and insufficient for any practical application.
+
+\subsection{Recommended Improvements}
+
+\subsubsection{Immediate Next Steps}
+
+\begin{enumerate}
+    \item \textbf{Test larger language models} (7B+ parameters) to determine if model capacity is limiting factor
+    \item \textbf{Alternative graph construction:}
+    \begin{itemize}
+        \item Attention-weight-based graphs
+        \item Mutual information instead of Pearson correlation
+        \item Multiple density thresholds simultaneously
+    \end{itemize}
+    \item \textbf{Enhanced architectures:}
+    \begin{itemize}
+        \item Graph Attention Networks (GAT)
+        \item Deeper networks with residual connections
+        \item Multi-scale feature aggregation
+    \end{itemize}
+    \item \textbf{Address class imbalance} with proper loss weighting
+\end{enumerate}
+
+\subsubsection{Longer-Term Research Directions}
+
+\begin{enumerate}
+    \item Investigate supervised contrastive learning to enforce class separation
+    \item Combine graph features with traditional NLP features (e.g., perplexity, entropy)
+    \item Develop ensemble methods across multiple layers
+    \item Explore different probe positions (earlier layers, attention heads, feed-forward layers)
+    \item Incorporate external knowledge bases for fact verification
+\end{enumerate}
+
+\subsection{Methodological Insights}
+
+\textbf{Positive Aspects:}
+\begin{itemize}
+    \item Pipeline is robust and computationally efficient
+    \item Scalable to larger datasets with current infrastructure
+    \item No numerical instability issues (NaN/Inf handling successful)
+    \item Reproducible workflow with comprehensive logging
+\end{itemize}
+
+\textbf{Negative Aspects:}
+\begin{itemize}
+    \item Core assumption (correlation patterns differ by truthfulness) not validated
+    \item Graph construction method may discard critical information
+    \item Single-layer analysis may miss multi-layer patterns
+    \item Binary classification may be too coarse for nuanced truthfulness
+\end{itemize}
+
+\subsection{Broader Implications}
+
+This analysis contributes to understanding of:
+
+\begin{enumerate}
+    \item \textbf{Limitations of probing LLM internal representations:} Not all semantic properties are easily extractable from hidden states. Small models may not encode complex semantic features.
+    
+    \item \textbf{Graph-based methods in NLP:} Correlation graphs alone insufficient for high-level semantics. Richer graph construction incorporating linguistic structure may be necessary.
+    
+    \item \textbf{Hallucination detection challenges:} Binary true/false classification may oversimplify. Context and world knowledge critical (not captured in local correlations). May require external knowledge bases or fact-checking.
+\end{enumerate}
+
+\subsection{Final Recommendations}
+
+\textbf{For this specific pipeline:}
+\begin{itemize}
+    \item \textbf{DO NOT DEPLOY} in current form
+    \item \textbf{REQUIRES SUBSTANTIAL IMPROVEMENTS} before practical use
+\end{itemize}
+
+\textbf{For future research:}
+\begin{itemize}
+    \item \textbf{INVESTIGATE} alternative approaches (attention-based, multi-modal)
+    \item \textbf{TEST ON LARGER MODELS} as priority
+    \item \textbf{DEVELOP HYBRID METHODS} combining graph and traditional features
+    \item \textbf{ESTABLISH STRONGER BASELINES} for comparison
+\end{itemize}
+
+\textbf{For computational infrastructure:}
+\begin{itemize}
+    \item \textbf{CURRENT SETUP IS ADEQUATE} for scaled experiments
+    \item \textbf{CONSIDER GPU PARALLELIZATION} for model training (currently single GPU)
+    \item \textbf{IMPLEMENT CHECKPOINTING} for very long training runs
+\end{itemize}
+
+\section{References and Data}
+
+\subsection{Configuration Parameters}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Model & Qwen/Qwen2.5-0.5B \\
+Dataset & TruthfulQA \\
+Primary layer & 5 \\
+Additional layers & 6, 7, 8, 9, 10, 11 \\
+Network density & 5\% \\
+GCN hidden dimension & 32 \\
+GCN depth & 3 layers \\
+Input features & Correlation matrix \\
+Pooling & Global mean \\
+Train/test split & 80/20 \\
+Workers (network) & 40 \\
+GPU & AMD MI250X \\
+\bottomrule
+\end{tabular}
+\caption{Key configuration parameters for the analysis pipeline.}
+\end{table}
+
+\subsection{Software Versions}
+
+\begin{itemize}
+    \item PyTorch: 2.5.1+rocm6.1
+    \item PyTorch Geometric: 2.6.1
+    \item ROCm: 6.1 (HIP runtime 7.0)
+    \item Python: 3.10+
+    \item SLURM cluster environment
+\end{itemize}
+
+\subsection{Data Access}
+
+\begin{itemize}
+    \item \textbf{Original dataset:} TruthfulQA benchmark
+    \item \textbf{Total questions:} 817 unique (5,915 total QA pairs)
+    \item \textbf{Format:} CSV with columns [question\_id, question, answer, label]
+\end{itemize}
+
+\subsection{Contact Information}
+
+\begin{itemize}
+    \item \textbf{Institution:} VIPER Cluster, Jülich Research Centre
+    \item \textbf{Contact:} \texttt{a.omidvarnia@fz-juelich.de}
+    \item \textbf{Date:} December 2024
+\end{itemize}
+
+\subsection{Citation}
+
+If using these results, please cite:
+\begin{itemize}
+    \item TruthfulQA dataset (Lin et al., 2021)
+    \item PyTorch Geometric framework (Fey \& Lenssen, 2019)
+    \item This technical report
+\end{itemize}
+
+\end{document}
