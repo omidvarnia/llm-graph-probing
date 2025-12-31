@@ -266,6 +266,39 @@ def main(_):
     logging.info("\n" + "="*60)
     logging.info("✓ Graph analysis completed successfully")
     logging.info("="*60)
+    
+    # ===== COUPLING INDEX ANALYSIS (Section 5.2) =====
+    # Compute neural topology coupling index for hallucination detection
+    logging.info("\n" + "="*60)
+    logging.info("Computing Neural Topology Coupling Index...")
+    logging.info("(Equations 9-11 from 2506.01042v2.pdf)")
+    logging.info("="*60)
+    
+    try:
+        from hallucination.coupling_index import compute_coupling_index
+        
+        coupling_results = compute_coupling_index(
+            topology_root=str(model_dir),
+            layer_id=FLAGS.layer
+        )
+        
+        if coupling_results:
+            coupling_file = reports_dir / f"coupling_index.json"
+            import json
+            with open(coupling_file, 'w') as f:
+                json.dump(coupling_results, f, indent=2)
+            logging.info(f"Coupling index results saved to: {coupling_file}")
+            
+            # Summary
+            logging.info("\n--- Coupling Index Summary ---")
+            logging.info(f"C_TT (truthful-truthful): {coupling_results['c_tt']:.4f}")
+            logging.info(f"C_HH (hallucinated-hallucinated): {coupling_results['c_hh']:.4f}")
+            logging.info(f"C_TH (truthful-hallucinated): {coupling_results['c_th']:.4f}")
+            logging.info(f"C (coupling index): {coupling_results['c']:.4f}")
+            logging.info(f"Samples with positive coupling: {coupling_results['positive_ratio']*100:.1f}%")
+    
+    except Exception as e:
+        logging.warning(f"Could not compute coupling index: {e}")
 
 
 if __name__ == "__main__":

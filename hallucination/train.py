@@ -173,10 +173,12 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
             torch.save(model.state_dict(), model_save_path)
             epochs_no_improve = 0
         else:
-            epochs_no_improve += 1
-            if epochs_no_improve >= FLAGS.early_stop_patience:
-                logging.info(f"Early stopping at epoch {epoch + 1}")
-                break
+            # Only count epochs_no_improve after warmup period
+            if epoch >= FLAGS.warmup_epochs:
+                epochs_no_improve += 1
+                if epochs_no_improve >= FLAGS.early_stop_patience:
+                    logging.info(f"Early stopping at epoch {epoch + 1} (no improvement for {epochs_no_improve} epochs)")
+                    break
     
     logging.info(f"Best Epoch: {best_metrics['epoch']}")
     for metric in ["accuracy", "precision", "recall", "f1"]:

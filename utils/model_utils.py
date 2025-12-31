@@ -2,6 +2,39 @@ from transformers import AutoConfig, AutoTokenizer, AutoModelForCausalLM
 from utils.constants import hf_model_name_map, QWEN_MODELS, QWEN_CHAT_MODELS, OPENAI_BASE_MODELS, PYTHIA_MODELS
 
 
+def get_model_num_layers(llm_model_name):
+    """
+    Automatically detect the number of layers in the model.
+    
+    Args:
+        llm_model_name: Model name (alias or HF ID)
+    
+    Returns:
+        int: Number of layers in the model
+    """
+    # Allow either alias (mapped via hf_model_name_map) or direct HF ID
+    hf_model_name = hf_model_name_map.get(llm_model_name, llm_model_name)
+    
+    config = AutoConfig.from_pretrained(hf_model_name)
+    
+    if hf_model_name in [*QWEN_MODELS, *PYTHIA_MODELS]:
+        num_layers = config.num_hidden_layers
+    elif hf_model_name in OPENAI_BASE_MODELS:
+        num_layers = config.n_layer
+    else:
+        # Try common attribute names
+        if hasattr(config, 'num_hidden_layers'):
+            num_layers = config.num_hidden_layers
+        elif hasattr(config, 'n_layer'):
+            num_layers = config.n_layer
+        elif hasattr(config, 'num_layers'):
+            num_layers = config.num_layers
+        else:
+            raise NotImplementedError(f"Could not auto-detect number of layers for model {llm_model_name}")
+    
+    return num_layers
+
+
 def get_num_nodes(llm_model_name, llm_layer, linear_probe_input=None):
     if linear_probe_input == "word2vec_average":
         return 300

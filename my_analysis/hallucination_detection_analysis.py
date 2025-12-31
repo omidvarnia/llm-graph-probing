@@ -315,12 +315,19 @@ logging.info("Starting Graph Probing Analysis")
 # -----------------------------
 # Analysis Pipeline Configuration (from YAML)
 # -----------------------------
-if isinstance(layer_list, (list, tuple)):
+# Auto-detect layers if layer_list is 'all'
+if str(layer_list).strip().lower() == 'all':
+    from utils.model_utils import get_model_num_layers
+    num_model_layers = get_model_num_layers(model_name)
+    layer_ids = list(range(num_model_layers))  # 0 to num_layers-1
+    logging.info(f"Auto-detected {num_model_layers} layers in model {model_name}")
+    logging.info(f"Processing all layers: {layer_ids}")
+elif isinstance(layer_list, (list, tuple)):
     layer_ids = [int(x) for x in layer_list]
 else:
     layer_ids = [int(x) for x in str(layer_list).replace(',', ' ').split() if x.strip()]
 if not layer_ids:
-    raise ValueError("layer_list must specify at least one layer (e.g., '5' or '5,6')")
+    raise ValueError("layer_list must specify at least one layer (e.g., '5' or '5,6' or 'all')")
 layer_id = layer_ids[0]
 
 # Output directories for interim artifacts
@@ -672,11 +679,8 @@ logging.info(f"Eval batch size: {eval_batch_size}")
 logging.info(f"Num epochs: {num_epochs}")
 logging.info(f"Early stop patience: {early_stop_patience}")
 logging.info(f"Label smoothing: {label_smoothing}")
-logging.info(f"  Num epochs: {num_epochs}")
-logging.info(f"  Early stop patience: {early_stop_patience}")
-logging.info(f"  Label smoothing: {label_smoothing}")
-logging.info(f"  Gradient clipping: {gradient_clip}")
-logging.info(f"  Warmup epochs: {warmup_epochs}")
+logging.info(f"Gradient clipping: {gradient_clip}")
+logging.info(f"Warmup epochs: {warmup_epochs}")
 
 # Sanity checks for Step 3
 if num_epochs <= 0:
@@ -693,44 +697,51 @@ if not (0 <= label_smoothing < 1.0):
     logging.error(f"✗ SANITY CHECK FAILED: label_smoothing must be 0 <= x < 1.0, got {label_smoothing}")
     sys.exit(1)
 logging.info(f"✓ SANITY CHECK: label_smoothing={label_smoothing} is valid")
-logging.info("Executing train.py...")
-logging.info("This may take a while...")
-step3_log = reports_dir / "step3_train.log"
-step_start = time.monotonic()
-result = run(
-    [
-        python_exe,
-        "-m",
-        "hallucination.train",
-        f"--dataset_name={dataset_name}",
-        f"--llm_model_name={model_name}",
-        f"--ckpt_step={ckpt_step}",
-        f"--llm_layer={layer_id}",
-        f"--probe_input={probe_input}",
-        f"--density={network_density}",
-        f"--batch_size={batch_size}",
-        f"--eval_batch_size={eval_batch_size}",
-        f"--num_layers={num_layers}",
-        f"--hidden_channels={num_channels}",
-        f"--lr={learning_rate}",
-        f"--num_epochs={num_epochs}",
-        f"--early_stop_patience={early_stop_patience}",
-        f"--label_smoothing={label_smoothing}",
-        f"--gradient_clip={gradient_clip}",
-        f"--warmup_epochs={warmup_epochs}",
-        f"--gpu_id={gpu_id}",
-    ] + (["--from_sparse_data"] if from_sparse_data else []),
-    cwd=project_dir,
-    env=env,
-    log_file=step3_log,
-)
-step_duration = time.monotonic() - step_start
 
-if result != 0:
-    logging.error(f"✗ Training failed with return code {result}")
-    step_results.append({"step": 3, "name": "train", "status": "error", "duration_sec": step_duration, "log": str(step3_log)})
-else:
-    logging.info("✓ Probes trained successfully")
+# Train probes for ALL layers
+for lid in layer_ids:
+    logging.info(f"\n--- Training probe for layer {lid} ---")
+    lid_reports_dir = reports_root / f"layer_{lid}"
+    lid_reports_dir.mkdir(parents=True, exist_ok=True)
+    step3_log = lid_reports_dir / "step3_train.log"
+    logging.info("Executing train.py...")
+    logging.info("This may take a while...")
+    step_start = time.monotonic()
+    result = run(
+        [
+            python_exe,
+            "-m",
+            "hallucination.train",
+            f"--dataset_name={dataset_name}",
+            f"--llm_model_name={model_name}",
+            f"--ckpt_step={ckpt_step}",
+            f"--llm_layer={lid}",
+            f"--probe_input={probe_input}",
+            f"--density={network_density}",
+            f"--batch_size={batch_size}",
+            f"--eval_batch_size={eval_batch_size}",
+            f"--num_layers={num_layers}",
+            f"--hidden_channels={num_channels}",
+            f"--lr={learning_rate}",
+            f"--num_epochs={num_epochs}",
+            f"--early_stop_patience={early_stop_patience}",
+            f"--label_smoothing={label_smoothing}",
+            f"--gradient_clip={gradient_clip}",
+            f"--warmup_epochs={warmup_epochs}",
+            f"--gpu_id={gpu_id}",
+        ] + (["--from_sparse_data"] if from_sparse_data else []),
+        cwd=project_dir,
+        env=env,
+        log_file=step3_log,
+    )
+    step_duration = time.monotonic() - step_start
+
+    if result != 0:
+        logging.error(f"✗ Training failed for layer {lid} with return code {result}")
+        step_results.append({"step": 3, "layer": lid, "name": "train", "status": "error", "duration_sec": step_duration, "log": str(step3_log)})
+        continue
+    
+    logging.info(f"✓ Probe trained successfully for layer {lid}")
     
     # Sanity checks for training outputs
     sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
@@ -739,7 +750,7 @@ else:
     else:
         model_dir = f"{sanitized_model_name}_step{ckpt_step}"
     density_tag = f"{int(round(network_density * 100)):02d}"
-    best_model_path = main_dir / "saves" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{layer_id}" / f"best_model_density-{density_tag}_dim-{num_channels}_hop-{num_layers}_input-{probe_input}.pth"
+    best_model_path = main_dir / "saves" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{lid}" / f"best_model_density-{density_tag}_dim-{num_channels}_hop-{num_layers}_input-{probe_input}.pth"
     
     model_size = 0
     if best_model_path.exists():
@@ -749,14 +760,11 @@ else:
         logging.warning(f"⚠ SANITY CHECK: Best model file not found at {best_model_path}")
     
     logging.info("Trained models are ready for evaluation")
-    logging.info("\nNote: The FC (functional connectivity) matrix is STATIC and does NOT change during training.")
-    logging.info("      It is computed from the LLM's hidden activations. The probe (GCN/MLP) learns to")
-    logging.info("      extract hallucination signals from this fixed graph structure.")
     
     # TensorBoard scalars
-    tb_dir = main_dir / "runs" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{layer_id}"
-    loss_plot = reports_dir / "train_loss.png"
-    metrics_plot = reports_dir / "test_metrics.png"
+    tb_dir = main_dir / "runs" / f"hallucination/truthfulqa/{model_dir}" / f"layer_{lid}"
+    loss_plot = lid_reports_dir / "train_loss.png"
+    metrics_plot = lid_reports_dir / "test_metrics.png"
     try:
         event_files = sorted(tb_dir.glob("events.*"), key=lambda p: p.stat().st_mtime, reverse=True)
         if event_files:
@@ -765,7 +773,7 @@ else:
             ea.Reload()
             if "train/loss" in ea.Tags().get("scalars", []):
                 loss_events = [(e.step, e.value) for e in ea.Scalars("train/loss")]
-                _plot_series(loss_events, f"Train Loss ({model_name} layer {layer_id})", "loss", loss_plot)
+                _plot_series(loss_events, f"Train Loss ({model_name} layer {lid})", "loss", loss_plot)
             metrics = {}
             for tag in ["test/accuracy", "test/precision", "test/recall", "test/f1"]:
                 if tag in ea.Tags().get("scalars", []):
@@ -775,7 +783,7 @@ else:
                 for tag, series in metrics.items():
                     xs, ys = zip(*series)
                     plt.plot(xs, ys, marker="o", label=tag.split("/")[-1])
-                plt.title(f"Test Metrics ({model_name} layer {layer_id})")
+                plt.title(f"Test Metrics ({model_name} layer {lid})")
                 plt.xlabel("step")
                 plt.ylabel("value")
                 plt.legend()
@@ -787,6 +795,7 @@ else:
 
     step_results.append({
         "step": 3,
+        "layer": lid,
         "name": "train",
         "status": "ok",
         "duration_sec": step_duration,
@@ -801,39 +810,90 @@ else:
 # Step 4: Evaluate the probes
 # -----------------------------
 logging.info("\n" + "="*60)
-logging.info("\nStep 4: Evaluating trained probes...")
-logging.info(f"  Network density: {network_density}")
-logging.info("Executing eval.py...")
-logging.info("Computing evaluation metrics...")
-step4_log = reports_dir / "step4_eval.log"
-step_start = time.monotonic()
-result = run(
-    [
-        python_exe,
-        "-m",
-        "hallucination.eval",
-        f"--dataset_name={dataset_name}",
-        f"--llm_model_name={model_name}",
-        f"--ckpt_step={ckpt_step}",
-        f"--llm_layer={layer_id}",
-        f"--probe_input={probe_input}",
-        f"--density={network_density}",
-        f"--num_layers={num_layers}",
-        f"--gpu_id={gpu_id}",
-    ],
-    cwd=project_dir,
-    env=env,
-    log_file=step4_log,
-)
-step_duration = time.monotonic() - step_start
+logging.info("STEP 4: Evaluating Trained Probes")
+logging.info("="*60)
+logging.info(f"Network density: {network_density}")
+logging.info(f"Layers to evaluate: {layer_ids}")
 
-if result != 0:
-    logging.error(f"Evaluation failed with return code {result}")
-    step_results.append({"step": 4, "name": "eval", "status": "error", "duration_sec": step_duration, "log": str(step4_log)})
-else:
-    logging.info("✓ Evaluation completed successfully")
-    logging.info("Evaluation results are ready")
-    step_results.append({"step": 4, "name": "eval", "status": "ok", "duration_sec": step_duration, "log": str(step4_log)})
+for lid in layer_ids:
+    logging.info(f"\n--- Evaluating probe for layer {lid} ---")
+    lid_reports_dir = reports_root / f"layer_{lid}"
+    step4_log = lid_reports_dir / "step4_eval.log"
+    logging.info("Executing eval.py...")
+    logging.info("Computing evaluation metrics...")
+    step_start = time.monotonic()
+    result = run(
+        [
+            python_exe,
+            "-m",
+            "hallucination.eval",
+            f"--dataset_name={dataset_name}",
+            f"--llm_model_name={model_name}",
+            f"--ckpt_step={ckpt_step}",
+            f"--llm_layer={lid}",
+            f"--probe_input={probe_input}",
+            f"--density={network_density}",
+            f"--num_layers={num_layers}",
+            f"--gpu_id={gpu_id}",
+        ],
+        cwd=project_dir,
+        env=env,
+        log_file=step4_log,
+    )
+    step_duration = time.monotonic() - step_start
+
+    if result != 0:
+        logging.error(f"Evaluation failed for layer {lid} with return code {result}")
+        step_results.append({"step": 4, "layer": lid, "name": "eval", "status": "error", "duration_sec": step_duration, "log": str(step4_log)})
+        continue
+    
+    logging.info(f"✓ Evaluation completed successfully for layer {lid}")
+    
+    # Extract metrics from eval log
+    try:
+        import re
+        with open(step4_log, 'r') as f:
+            log_content = f.read()
+        
+        # Find confusion matrix
+        cm_match = re.search(r'\[\[(\d+)\s+(\d+)\]\s+\[(\d+)\s+(\d+)\]\]', log_content)
+        if cm_match:
+            tn, fp, fn, tp = map(int, cm_match.groups())
+            total = tn + fp + fn + tp
+            accuracy = (tn + tp) / total if total > 0 else 0
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+            
+            logging.info(f"  Test Accuracy: {accuracy:.4f} ({accuracy*100:.2f}%)")
+            logging.info(f"  Precision: {precision:.4f}")
+            logging.info(f"  Recall: {recall:.4f}")
+            logging.info(f"  F1 Score: {f1:.4f}")
+            logging.info(f"  Confusion Matrix: TN={tn}, FP={fp}, FN={fn}, TP={tp}")
+            logging.info(f"  Above chance (>50%): {'✓ YES' if accuracy > 0.5 else '✗ NO'}")
+            
+            step_results.append({
+                "step": 4,
+                "layer": lid,
+                "name": "eval",
+                "status": "ok",
+                "duration_sec": step_duration,
+                "log": str(step4_log),
+                "metrics": {
+                    "accuracy": float(accuracy),
+                    "precision": float(precision),
+                    "recall": float(recall),
+                    "f1": float(f1),
+                    "confusion_matrix": {"tn": tn, "fp": fp, "fn": fn, "tp": tp},
+                    "above_chance": bool(accuracy > 0.5)
+                }
+            })
+        else:
+            logging.warning(f"Could not extract confusion matrix from eval log for layer {lid}")
+            step_results.append({"step": 4, "layer": lid, "name": "eval", "status": "ok", "duration_sec": step_duration, "log": str(step4_log)})
+    except Exception as e:
+        logging.warning(f"Could not parse evaluation metrics for layer {lid}: {e}")
+        step_results.append({"step": 4, "layer": lid, "name": "eval", "status": "ok", "duration_sec": step_duration, "log": str(step4_log)})
 
 # -----------------------------
 # Step 5: Graph statistics
@@ -907,6 +967,64 @@ for lid in layer_ids:
     layers_completed.append(lid)
 
 # -----------------------------
+# Generate Classification Metrics Summary
+# -----------------------------
+logging.info("\n" + "="*60)
+logging.info("CLASSIFICATION METRICS SUMMARY")
+logging.info("="*60)
+
+# Collect evaluation metrics for all layers
+eval_results = [r for r in step_results if r.get("step") == 4 and r.get("status") == "ok" and "metrics" in r]
+
+if eval_results:
+    logging.info("\n{:<8} {:<10} {:<10} {:<10} {:<10} {:<12}".format(
+        "Layer", "Accuracy", "Precision", "Recall", "F1 Score", "Above Chance"))
+    logging.info("-" * 72)
+    
+    for result in sorted(eval_results, key=lambda x: x.get("layer", 0)):
+        layer = result.get("layer", "?")
+        metrics = result.get("metrics", {})
+        acc = metrics.get("accuracy", 0)
+        prec = metrics.get("precision", 0)
+        rec = metrics.get("recall", 0)
+        f1 = metrics.get("f1", 0)
+        above_chance = "\u2713 YES" if metrics.get("above_chance", False) else "\u2717 NO"
+        
+        logging.info("{:<8} {:<10.4f} {:<10.4f} {:<10.4f} {:<10.4f} {:<12}".format(
+            layer, acc, prec, rec, f1, above_chance))
+        
+        cm = metrics.get("confusion_matrix", {})
+        logging.info(f"         Confusion Matrix: TN={cm.get('tn', 0)}, FP={cm.get('fp', 0)}, "
+                    f"FN={cm.get('fn', 0)}, TP={cm.get('tp', 0)}")
+    
+    # Save metrics summary to CSV
+    metrics_summary_path = reports_root / "classification_metrics_summary.csv"
+    try:
+        summary_rows = []
+        for result in sorted(eval_results, key=lambda x: x.get("layer", 0)):
+            layer = result.get("layer", "?")
+            metrics = result.get("metrics", {})
+            cm = metrics.get("confusion_matrix", {})
+            summary_rows.append({
+                "layer": layer,
+                "accuracy": metrics.get("accuracy", 0),
+                "precision": metrics.get("precision", 0),
+                "recall": metrics.get("recall", 0),
+                "f1_score": metrics.get("f1", 0),
+                "above_chance": metrics.get("above_chance", False),
+                "tn": cm.get("tn", 0),
+                "fp": cm.get("fp", 0),
+                "fn": cm.get("fn", 0),
+                "tp": cm.get("tp", 0),
+            })
+        pd.DataFrame(summary_rows).to_csv(metrics_summary_path, index=False)
+        logging.info(f"\n\u2713 Metrics summary saved to: {metrics_summary_path}")
+    except Exception as e:
+        logging.warning(f"Could not save metrics summary CSV: {e}")
+else:
+    logging.warning("No evaluation metrics found in results")
+
+# -----------------------------
 # Persist summary and quick visuals
 # -----------------------------
 summary_json = reports_root / "summary.json"
@@ -969,6 +1087,44 @@ except Exception as e:
     logging.warning(f"Could not generate LaTeX report: {e}")
     logging.info("Continuing without report generation...")
 
+# ============================================
+# Generate Figure 5 Comparison Plots
+# ============================================
+logging.info("\n" + "="*60)
+logging.info("Step 6: Generating comparison plots (Figure 5b-c)")
+logging.info("="*60)
+
+try:
+    from hallucination.comparison import create_comparison_figure, create_layer_metrics_plot
+    
+    # Create output directory for figures
+    figures_dir = reports_root / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate Figure 5(b): Accuracy comparison across layers
+    logging.info("Generating accuracy comparison plot (Figure 5b equivalent)...")
+    create_layer_metrics_plot(
+        reports_root_dir=reports_root,
+        layer_ids=layer_ids,
+        output_dir=figures_dir
+    )
+    
+    # Generate Figure 5(c): Coupling index distribution
+    logging.info("Generating coupling index distribution (Figure 5c equivalent)...")
+    create_comparison_figure(
+        reports_root_dir=reports_root,
+        output_dir=figures_dir
+    )
+    
+    logging.info(f"✓ Comparison plots saved to: {figures_dir}")
+    logging.info(f"  - hallucination_accuracy_comparison.png (Figure 5b)")
+    logging.info(f"  - coupling_index_distribution.png (Figure 5c)")
+    logging.info(f"  - coupling_index_per_layer.png (Additional analysis)")
+    
+except Exception as e:
+    logging.warning(f"Could not generate comparison plots: {e}")
+    logging.info("Continuing without plot generation...")
+
 logging.info("\n" + "="*60)
 logging.info("✓ Graph Probing Analysis Complete!")
 logging.info("="*60)
@@ -979,3 +1135,4 @@ logging.info(f"  - Layers analyzed: {', '.join(str(x) for x in layer_ids)}")
 logging.info(f"  - Probe input type: {probe_input}")
 logging.info("All steps completed successfully!")
 logging.info(f"Reports saved under: {reports_root}")
+logging.info(f"Figures saved under: {reports_root / 'figures'}")

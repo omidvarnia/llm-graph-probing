@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #
-#SBATCH --job-name=hallu_qwen
+#SBATCH --job-name=hallu_gpt2
 #SBATCH --output=/ptmp/aomidvarnia/analysis_results/llm_graph/slurm_logs/%j.out
 #SBATCH --error=/ptmp/aomidvarnia/analysis_results/llm_graph/slurm_logs/%j.err
 #
@@ -44,7 +44,7 @@ JOB_START_TIME=$(date +%s)
 # =============================================================================
 # Paths (usually don't need to change these)
 # =============================================================================
-CONFIG_FILE=/u/aomidvarnia/GIT_repositories/llm-graph-probing/config_files/pipeline_config_qwen.yaml
+CONFIG_FILE=/u/aomidvarnia/GIT_repositories/llm-graph-probing/config_files/pipeline_config_gpt2.yaml
 ENV_PATH=/ptmp/aomidvarnia/uv_envs/llm_graph
 PYTHON=${ENV_PATH}/bin/python
 
