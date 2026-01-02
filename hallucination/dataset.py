@@ -21,7 +21,10 @@ def prepare_data(dataset_filename, test_set_ratio, seed):
 
     test_size = int(len(indices) * test_set_ratio)
     train_size = len(indices) - test_size
-    train_data_split, test_data_split = random_split(indices, [train_size, test_size], generator=torch.Generator().manual_seed(seed))
+    if seed is not None:
+        train_data_split, test_data_split = random_split(indices, [train_size, test_size], generator=torch.Generator().manual_seed(seed))
+    else:
+        train_data_split, test_data_split = random_split(indices, [train_size, test_size])
     return train_data_split, test_data_split
 
 
@@ -62,8 +65,6 @@ class TruthfulQADataset(Dataset):
 
         if not self.from_sparse_data:
             adj = np.load(data_path / self.dense_filename)
-            # Replace NaN/Inf values to stabilize downstream graph ops
-            adj = np.nan_to_num(adj, nan=0.0, posinf=0.0, neginf=0.0)
             percentile_threshold = self.network_density * 100
             threshold = np.percentile(np.abs(adj), 100 - percentile_threshold)
             adj[np.abs(adj) < threshold] = 0
@@ -72,11 +73,10 @@ class TruthfulQADataset(Dataset):
             edge_index, edge_attr = dense_to_sparse(adj)
             num_nodes = adj.shape[0]
         else:
-            edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{self.density_tag}_edge_index.npy")).long()
-            edge_attr_np = np.load(data_path / f"layer_{self.llm_layer}_sparse_{self.density_tag}_edge_attr.npy").astype(np.float32)
-            # Sanitize NaN/Inf in saved sparse weights while preserving sign
-            edge_attr_np = np.nan_to_num(edge_attr_np, nan=0.0, posinf=0.0, neginf=0.0)
-            edge_attr = torch.from_numpy(edge_attr_np).float()
+            # Format density as 2-digit tag (e.g., 0.05 -> "05")
+            density_tag = f"{int(round(self.network_density * 100)):02d}"
+            edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy")).long()
+            edge_attr = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy")).float()
             num_nodes = edge_index.max().item() + 1
 
         y = torch.from_numpy(np.load(data_path / "label.npy")).long()
@@ -138,8 +138,6 @@ class TruthfulQALinearDataset(TorchDataset):
         question_idx = self.network_indices[idx]
         data_path = self.data_dir / str(question_idx)
         feature_np = np.load(data_path / self.dense_filename).astype(np.float32)
-        # Clean NaN/Inf in dense features (e.g., corr matrices)
-        feature_np = np.nan_to_num(feature_np, nan=0.0, posinf=0.0, neginf=0.0)
         feature = torch.from_numpy(feature_np)
         if self.feature_name == "corr":
             triu_indices = torch.triu_indices(feature.shape[0], feature.shape[1], offset=1)
@@ -169,7 +167,7 @@ class TruthfulQALinearDataset(TorchDataset):
         return all_features, all_labels
 
 
-def get_truthfulqa_linear_dataloader(feature_name, dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0, return_all_data=False):
+def get_truthfulqa_linear_dataloader(feature_name, dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=None, feature_density=1.0, return_all_data=False):
 
     dataset_filename = main_dir / "data/hallucination" / f"{dataset_name}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)
@@ -254,7 +252,7 @@ class TruthfulQACCSDataset(TorchDataset):
         return self.loaded_data[idx]
 
 
-def get_truthfulqa_ccs_dataloader(dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=42, feature_density=1.0):
+def get_truthfulqa_ccs_dataloader(dataset_name, llm_model_name, ckpt_step, llm_layer, batch_size, eval_batch_size, num_workers, prefetch_factor, test_set_ratio=0.2, shuffle=True, seed=None, feature_density=1.0):
 
     dataset_filename = main_dir / "data/hallucination" / f"{dataset_name}.csv"
     train_data_split, test_data_split = prepare_data(dataset_filename, test_set_ratio, seed)

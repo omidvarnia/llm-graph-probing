@@ -99,9 +99,9 @@ def run_ppl(rank, queue, model_name, revision, gpu_id, batch_size, all_sentences
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("STEP 1: Dataset Construction Pipeline")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info(f"Dataset: {FLAGS.dataset}")
     logging.info(f"Model: {FLAGS.llm_model_name} (checkpoint: {FLAGS.ckpt_step})")
     logging.info(f"Batch size: {FLAGS.batch_size}")
@@ -181,11 +181,11 @@ def main(_):
     df = pd.DataFrame(saved_dataset)
     df.to_csv(save_path, index=False)
     logging.info(f"✓ Dataset saved to: {save_path}")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("✓ STEP 1 Complete: Dataset Construction Finished")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("\n")
-    logging.info("\n" + "="*80)
+    logging.info("="*10)
 
 
 if __name__ == "__main__":

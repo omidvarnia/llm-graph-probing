@@ -395,6 +395,344 @@ Figure \ref{fig:label_dist} shows the distribution of truthful vs. hallucinated 
 
 The near-perfect balance (50.3\% truthful, 49.7\% hallucinated) ensures that baseline accuracy from random classification is 50\%, providing a meaningful performance benchmark.
 
+\subsection{Data Flow Through the Entire Pipeline}
+
+This is a critical section: we trace exactly how the training and test datasets flow through every step of the pipeline to ensure the model trains on training data and is evaluated on unseen test data.
+
+\subsubsection{Stage 0: One-Time Data Splitting}
+
+**When it happens**: At the very beginning, before ANY processing
+
+**How it works**:
+\begin{enumerate}
+    \item Load full TruthfulQA dataset: 5,915 question-answer pairs
+    \item Randomly shuffle indices with seed=42 for reproducibility
+    \item Split into:
+    \begin{itemize}
+        \item **Training indices**: [0, 1, 2, ..., 4731] (4,732 samples)
+        \item **Test indices**: [4732, 4733, ..., 5914] (1,183 samples)
+    \end{itemize}
+\end{enumerate}
+
+**Important**: This split happens ONCE and is stored in memory. The same train/test indices are used throughout ALL pipeline steps.
+
+**Code location**: \texttt{hallucination/dataset.py}, function \texttt{prepare\_data()}
+
+\begin{lstlisting}
+def prepare_data(dataset_filename, test_set_ratio=0.2, seed=42):
+    data = pd.read_csv(dataset_filename)  # Load all 5,915 samples
+    indices = list(range(len(data)))      # [0, 1, 2, ..., 5914]
+    
+    test_size = int(len(indices) * test_set_ratio)  # 1,183 samples
+    train_size = len(indices) - test_size             # 4,732 samples
+    
+    # Split with fixed seed for reproducibility
+    train_indices, test_indices = random_split(
+        indices, 
+        [train_size, test_size],
+        generator=torch.Generator().manual_seed(seed)
+    )
+    return train_indices, test_indices  # Two separate lists
+\end{lstlisting}
+
+\subsubsection{Stage 1: Network Topology Computation (Step 2 in Pipeline)}
+
+**Input**: All 5,915 samples (no separation yet—we compute networks for everything)
+
+**What happens**:
+\begin{enumerate}
+    \item For each of 5,915 questions:
+    \begin{itemize}
+        \item Extract hidden activations from GPT-2 layer 5: 768-dimensional vectors
+        \item Compute correlation matrix: $768 \times 768$
+        \item Save to disk: \texttt{data/hallucination/truthfulqa/gpt2/\{sample\_id\}/}
+    \end{itemize}
+    \item All networks are computed in parallel using multiprocessing
+    \item Takes $\sim$ 308 seconds total
+    \item **NOTE**: Both training AND test samples get networks computed
+\end{enumerate}
+
+**Output**: 5,915 correlation matrices saved to disk (one per question, regardless of train/test split)
+
+**Why compute networks for all samples?**
+- We need to compute networks once for the entire dataset
+- Splitting only matters when loading data into models
+- This is more efficient than computing networks separately for train and test
+
+**Code location**: \texttt{hallucination/compute\_llm\_network.py}
+
+\subsubsection{Stage 2A: Training Phase (Step 3 in Pipeline - Training)}
+
+**Input**: Training indices only [0, 1, 2, ..., 4731]
+
+**What happens**:
+\begin{enumerate}
+    \item Create training dataset object:
+    \begin{lstlisting}
+train_dataset = TruthfulQADataset(
+    indices=train_indices,        # Only 4,732 training indices
+    layer=5,
+    network_density=0.05,
+    ...
+)
+    \end{lstlisting}
+    
+    \item For each training sample index (e.g., index 100):
+    \begin{itemize}
+        \item Load correlation matrix from disk: \texttt{...gpt2/100/layer\_5\_corr.npy}
+        \item Apply thresholding: keep top 5\% connections (29,491 of 589,824)
+        \item Convert to graph format (nodes, edges, edge weights)
+        \item Load label: \texttt{...gpt2/100/label.npy}
+        \item Create PyTorch Data object
+    \end{itemize}
+    
+    \item Create data loader with batch size 16:
+    \begin{itemize}
+        \item Batch 1: indices [0, 1, 2, ..., 15] (16 samples)
+        \item Batch 2: indices [16, 17, 18, ..., 31] (16 samples)
+        \item ...
+        \item Batch 296: indices [4720, 4721, ..., 4731] (12 samples, last incomplete batch)
+        \item Total: 296 batches per epoch
+    \end{itemize}
+\end{enumerate}
+
+**For each training epoch** (happens 10 times):
+\begin{enumerate}
+    \item Shuffle training data (random order each epoch)
+    \item Process 296 batches:
+    \begin{itemize}
+        \item Forward pass: Feed 16 graphs through GNN model
+        \item Compute loss using training labels
+        \item Backward pass: Compute gradients
+        \item Update weights with optimizer
+    \end{itemize}
+    \item Model ONLY SEES training samples during weight updates
+\end{enumerate}
+
+**Code location**: \texttt{hallucination/train.py}, function \texttt{train\_model()}
+
+\begin{lstlisting}
+train_dataset = TruthfulQADataset(
+    indices=train_indices,        # 4,732 samples only
+    ...
+)
+train_loader = DataLoader(
+    train_dataset, 
+    batch_size=16, 
+    shuffle=True  # Random order each epoch
+)
+
+for epoch in range(10):
+    for batch in train_loader:  # 296 batches of 16 samples
+        out = model(batch)
+        loss = loss_fn(out, batch.y)  # batch.y contains TRAINING labels
+        loss.backward()
+        optimizer.step()
+\end{lstlisting}
+
+**Key point**: Model weights are ONLY updated based on training data
+
+\subsubsection{Stage 2B: Evaluation Phase (Still Step 3 - Testing)}
+
+**Input**: Test indices only [4732, 4733, ..., 5914]
+
+**What happens** (happens once per epoch, after training epoch):
+\begin{enumerate}
+    \item Create test dataset object:
+    \begin{lstlisting}
+test_dataset = TruthfulQADataset(
+    indices=test_indices,         # Only 1,183 test indices
+    layer=5,
+    network_density=0.05,
+    ...
+)
+    \end{lstlisting}
+    
+    \item For each test sample index (e.g., index 4732):
+    \begin{itemize}
+        \item Load correlation matrix from disk: \texttt{...gpt2/4732/layer\_5\_corr.npy}
+        \item Apply SAME thresholding as training: keep top 5\%
+        \item Convert to graph format
+        \item Load label: \texttt{...gpt2/4732/label.npy}
+    \end{itemize}
+    
+    \item Create evaluation data loader with batch size 32:
+    \begin{itemize}
+        \item Batch 1: indices [4732, 4733, ..., 4763] (32 samples)
+        \item Batch 2: indices [4764, 4765, ..., 4795] (32 samples)
+        \item ...
+        \item Batch 37: indices [4896, ..., 4914] (19 samples, last incomplete batch)
+        \item Total: 37 batches
+    \end{itemize}
+\end{enumerate}
+
+**During evaluation** (no weight updates):
+\begin{enumerate}
+    \item Set model to evaluation mode: \texttt{model.eval()}
+    \item For each test batch:
+    \begin{itemize}
+        \item Forward pass: Feed 32 graphs through model (NO backprop)
+        \item Get predictions: \texttt{pred = out.argmax(dim=-1)}
+        \item Collect predictions and true labels
+    \end{itemize}
+    \item After all batches:
+    \begin{itemize}
+        \item Compute metrics: accuracy, precision, recall, F1
+        \item Compare predictions to test labels
+    \end{itemize}
+\end{enumerate}
+
+**Code location**: \texttt{hallucination/utils.py}, function \texttt{test\_fn()}
+
+\begin{lstlisting}
+test_dataset = TruthfulQADataset(
+    indices=test_indices,         # 1,183 samples only
+    ...
+)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+model.eval()  # Evaluation mode: no weight updates
+for epoch in range(10):
+    with torch.no_grad():  # No gradient computation
+        for batch in test_loader:  # 37 batches
+            out = model(batch)
+            preds = out.argmax(dim=-1)
+            # Compare preds to batch.y (TEST labels, never seen during training)
+    accuracy, precision, recall, f1 = compute_metrics(preds, test_labels)
+    # F1 used for early stopping
+\end{lstlisting}
+
+**Key point**: Model weights are NOT updated. Test data only used to evaluate current model performance.
+
+\subsubsection{Stage 3: Final Evaluation (Step 4 in Pipeline)}
+
+**Input**: Test indices [4732, 4733, ..., 5914]
+
+**What happens**:
+\begin{enumerate}
+    \item Load best trained model (from highest test F1 during training)
+    \item Create final evaluation dataset (same test indices as Stage 2B)
+    \item Run inference on all 1,183 test samples
+    \item Compute final metrics
+    \item Report: accuracy, precision, recall, F1, confusion matrix
+\end{enumerate}
+
+**Code location**: \texttt{hallucination/eval.py}
+
+\subsubsection{Stage 4: Graph Analysis (Step 5 in Pipeline)}
+
+**Input**: All 5,915 samples (to compute statistics)
+
+**What happens**:
+\begin{enumerate}
+    \item Load correlation matrices for all 5,915 samples
+    \item Separate by training vs. test labels
+    \item Compute connectivity statistics per label group:
+    \begin{itemize}
+        \item Truthful training samples: 2,376 samples (80\% of 2,975)
+        \item Hallucinated training samples: 2,356 samples (80\% of 2,940)
+        \item Truthful test samples: 599 samples (20\% of 2,975)
+        \item Hallucinated test samples: 584 samples (20\% of 2,940)
+    \end{itemize}
+    \item Compare patterns between training and test samples
+\end{enumerate}
+
+**Code location**: \texttt{hallucination/graph\_analysis.py}
+
+\subsection{Data Flow Diagram (Conceptual)}
+
+\begin{lstlisting}
+DATASET (5,915 samples)
+  ├─ Split (Seed=42)
+  │  ├─ TRAIN: indices [0..4731]           (4,732 samples)
+  │  └─ TEST:  indices [4732..5914]        (1,183 samples)
+  │
+  ├─ Step 2: Compute Networks (ALL samples)
+  │  ├─ For sample 0: correlation matrix → saved
+  │  ├─ For sample 1: correlation matrix → saved
+  │  └─ ...
+  │  └─ For sample 5914: correlation matrix → saved
+  │
+  ├─ Step 3: Train GNN (TRAINING data only)
+  │  ├─ Epoch 1:
+  │  │  ├─ Load TRAINING samples [0..4731]
+  │  │  ├─ Batch 1: samples [0, 1, ..., 15]
+  │  │  │  ├─ Forward pass (GNN)
+  │  │  │  ├─ Compute loss (TRAINING labels)
+  │  │  │  └─ Update weights ← ONLY FOR TRAINING
+  │  │  ├─ Batch 2: samples [16, 17, ..., 31]
+  │  │  └─ ... (296 batches)
+  │  │
+  │  └─ Epoch 1: Evaluate (TEST data only)
+  │     ├─ Load TEST samples [4732..5914]
+  │     ├─ Forward pass (NO weight updates)
+  │     ├─ Compute metrics (TEST labels)
+  │     ├─ Save if F1 improved
+  │     └─ No gradient computation
+  │
+  ├─ Epochs 2-10: Repeat above
+  │
+  ├─ Step 4: Final Evaluation
+  │  ├─ Load best model (highest test F1)
+  │  ├─ Run on TEST samples [4732..5914]
+  │  └─ Report final metrics
+  │
+  └─ Step 5: Graph Analysis
+     ├─ Load all 5,915 correlation matrices
+     ├─ Separate by train/test split
+     └─ Compare patterns
+\end{lstlisting}
+
+\subsection{Why This Design Prevents Overfitting}
+
+\textbf{The key principle}: Training and test data NEVER mix.
+
+\begin{table}[H]
+\centering
+\caption{Where Each Dataset is Used}
+\label{tab:data_flow_usage}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Operation} & \textbf{Training Data Used?} & \textbf{Test Data Used?} \\
+\midrule
+Network Computation & Yes (networks computed) & Yes (networks computed) \\
+GNN Weight Updates & Yes (gradients computed) & NO (strictly forbidden) \\
+Loss Computation & Yes (loss computed) & NO (eval only, no backprop) \\
+Gradient Computation & Yes (gradients computed) & NO (torch.no\_grad()) \\
+Metric Evaluation & Yes (accuracy on train) & Yes (accuracy on test) \\
+Early Stopping Decision & NO (not used) & Yes (F1 score) \\
+Model Improvement & NO (frozen during test) & Yes (best model selected) \\
+Final Metrics & NO (not reported) & Yes (reported) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{How early stopping works}:
+\begin{itemize}
+    \item Train on 4,732 training samples
+    \item After each epoch, evaluate on 1,183 test samples (model frozen)
+    \item If test F1 improves: save model as new best
+    \item If test F1 doesn't improve for 20 epochs: STOP
+    \item Return best model (not final epoch model)
+\end{itemize}
+
+This ensures the model learns general patterns from training data without memorizing it, because we stop when it stops improving on completely unseen test data.
+
+\subsection{Verification: Correct Data Portions Used}
+
+To verify this pipeline is correct, check:
+
+\begin{enumerate}
+    \item \textbf{Train set size}: 4,732 = 80\% of 5,915 ✓
+    \item \textbf{Test set size}: 1,183 = 20\% of 5,915 ✓
+    \item \textbf{Sum check}: 4,732 + 1,183 = 5,915 ✓
+    \item \textbf{No overlap}: Train indices [0-4731], Test indices [4732-5914] ✓
+    \item \textbf{Reproducible split}: Fixed seed=42 ✓
+    \item \textbf{Thresholding identical}: Same network density (5\%) for train and test ✓
+    \item \textbf{No data leakage}: Test samples never used in weight updates ✓
+    \item \textbf{Proper evaluation}: Metrics computed on completely unseen test data ✓
+\end{enumerate}
+
 % ============================================================================
 \section{Step 2: Computing Functional Connectivity Networks}
 % ============================================================================

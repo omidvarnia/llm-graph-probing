@@ -40,7 +40,7 @@ def load_neural_topology_data(dataset_name, model_name, ckpt_step, layer, featur
     topology_data = defaultdict(lambda: {'true': [], 'false': []})
     
     # Iterate through each row (each row index corresponds to a directory)
-    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Loading topology data"):
+    for idx, row in df.iterrows():
         question_id = row['question_id']
         label = row['label']
         
@@ -69,7 +69,7 @@ def calculate_correlation_metrics(topology_data):
     
     question_metrics = {}
     
-    for question_id, data in tqdm(topology_data.items(), desc="Processing questions"):
+    for question_id, data in topology_data.items():
         true_topologies = data['true']
         false_topologies = data['false']
 
@@ -213,9 +213,19 @@ def print_statistics(question_metrics):
     
 
 def main(_):
-    logging.info("\n\n" + "="*80)
+    # Suppress PyTorch/PyG warnings
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning)
+    warnings.filterwarnings('ignore', category=FutureWarning)
+    
+    # Configure absl logging format
+    logging.use_absl_handler()
+    import logging as stdlib_logging
+    absl_handler = logging.get_absl_handler()
+    absl_handler.setFormatter(stdlib_logging.Formatter('%(filename)s:%(lineno)d - %(message)s'))
+    logging.info("\n\n" + "="*10)
     logging.info("STEP 5: GRAPH ANALYSIS (NEURAL TOPOLOGY CORRELATION)")
-    logging.info("="*80)
+    logging.info("="*10)
     
     # ===== CONFIGURATION =====
     model_name = FLAGS.llm_model_name
@@ -228,7 +238,7 @@ def main(_):
     
     logging.info(f"Dataset: {FLAGS.dataset_name}")
     logging.info(f"Model: {FLAGS.llm_model_name}")
-    logging.info("="*80 + "\n")
+    logging.info("="*10 + "\n")
     
     logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
     logging.info(f"Layer: {FLAGS.layer}")
@@ -242,39 +252,39 @@ def main(_):
         pass
     
     # ===== LOAD TOPOLOGY DATA =====
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("Loading neural topology data...")
-    logging.info("="*60)
+    logging.info("="*10)
     topology_data = load_neural_topology_data(FLAGS.dataset_name, FLAGS.llm_model_name, FLAGS.ckpt_step, FLAGS.layer, FLAGS.feature)
     logging.info(f"Loaded data for {len(topology_data)} questions")
 
     # ===== COMPUTE METRICS =====
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("Calculating correlation metrics...")
-    logging.info("="*60)
+    logging.info("="*10)
     question_metrics = calculate_correlation_metrics(topology_data)
     logging.info(f"Computed metrics for {len(question_metrics)} questions")
     
     # ===== STATISTICS & RESULTS =====
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("Statistical Analysis:")
-    logging.info("="*60)
+    logging.info("="*10)
     diff = print_statistics(question_metrics)
     
     output_file = reports_dir / f"{model_tag}_layer_{FLAGS.layer}_{FLAGS.feature}_intra_vs_inter.npy"
     np.save(output_file, np.array(diff))
     logging.info(f"\nSaved results to: {output_file}")
     
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("✓ Graph analysis completed successfully")
-    logging.info("="*60)
+    logging.info("="*10)
     
     # ===== COUPLING INDEX ANALYSIS (Section 5.2) =====
     # Compute neural topology coupling index for hallucination detection
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("Computing Neural Topology Coupling Index...")
     logging.info("(Equations 9-11 from 2506.01042v2.pdf)")
-    logging.info("="*60)
+    logging.info("="*10)
     
     try:
         from hallucination.coupling_index import compute_coupling_index
@@ -302,11 +312,11 @@ def main(_):
     except Exception as e:
         logging.warning(f"Could not compute coupling index: {e}")
     
-    logging.info("\n" + "="*80)
+    logging.info("="*10)
     logging.info("STEP 5 COMPLETE: Graph Analysis")
-    logging.info("="*80)
+    logging.info("="*10)
     logging.info("✓ Graph analysis completed successfully")
-    logging.info("="*80 + "\n\n")
+    logging.info("="*10 + "\n\n")
 
 
 if __name__ == "__main__":

@@ -127,9 +127,9 @@ def _load_corr_paths(dataset_dir: Path, llm_layer: int):
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("Neuropathology Graph Metrics (healthy vs pathological)")
-    logging.info("="*60)
+    logging.info("="*10)
 
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
@@ -233,9 +233,9 @@ def main(_):
     for base in ["segregation", "aggregation", "clustering", "pathlen", "smallworld", "modularity"]:
         _save_hist_box(df, base)
 
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("✓ Neuropathology graph metrics complete")
-    logging.info("="*60)
+    logging.info("="*10)
 
 
 if __name__ == "__main__":

@@ -165,7 +165,7 @@ You'll see in the logs:
 INFO:absl:ROCm/HIP detected in PyTorch: torch.version.hip=6.1.40091-a8dbc0c19
 WARNING:absl:ROCm installed but no GPU devices visible: No HIP GPUs are available
 ...
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: CPU
   Device Index: 0

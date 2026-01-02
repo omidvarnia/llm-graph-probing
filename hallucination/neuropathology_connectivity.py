@@ -204,9 +204,9 @@ def _load_all_corr_paths(dataset_dir: Path, llm_layer: int) -> Dict[int, Path]:
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("Neuropathology Connectivity Simulation")
-    logging.info("="*60)
+    logging.info("="*10)
 
     # Resolve paths
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
@@ -273,9 +273,9 @@ def main(_):
         _save_heatmap(Cg_patho, f"Group FC Patho {cfg.name} (layer {FLAGS.llm_layer})", reports_dir / f"group_fc_patho_{cfg.name}_layer_{FLAGS.llm_layer}.png")
         logging.info("Saved group FC matrices and heatmaps.")
 
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("✓ Neuropathology connectivity generation complete")
-    logging.info("="*60)
+    logging.info("="*10)
 
 
 if __name__ == "__main__":

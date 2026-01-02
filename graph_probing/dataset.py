@@ -29,10 +29,14 @@ def prepare_data(dataset_filename, ckpt_step, llm_model_name, dataset_path, test
     
     path = os.path.join(path, dataset_name)
     
-    generator = torch.Generator().manual_seed(seed)
     test_set_size = int(num_sentences * test_set_ratio)
-    train_data_split, test_data_split = torch.utils.data.random_split(
-        list(range(num_sentences)), [num_sentences - test_set_size, test_set_size], generator=generator)
+    if seed is not None:
+        generator = torch.Generator().manual_seed(seed)
+        train_data_split, test_data_split = torch.utils.data.random_split(
+            list(range(num_sentences)), [num_sentences - test_set_size, test_set_size], generator=generator)
+    else:
+        train_data_split, test_data_split = torch.utils.data.random_split(
+            list(range(num_sentences)), [num_sentences - test_set_size, test_set_size])
     return train_data_split, test_data_split, targets, path
 
 
@@ -96,7 +100,7 @@ def get_brain_network_dataloader(
     test_set_ratio=0.2,
     in_memory=True,
     shuffle=True,
-    seed=42,
+    seed=None,
     target=["perplexities"],
     dataset_name="openwebtext",
     normalize_targets=True,
@@ -209,7 +213,7 @@ def get_brain_network_linear_dataloader(
     prefetch_factor=2,
     test_set_ratio=0.2,
     shuffle=True,
-    seed=42,
+    seed=None,
     target=["perplexities"],
     dataset_name="openwebtext",
     normalize_targets=True,

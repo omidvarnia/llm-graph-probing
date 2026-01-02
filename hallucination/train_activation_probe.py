@@ -41,9 +41,9 @@ flags.DEFINE_float("test_set_ratio", 0.2, "The ratio of the test set.")
 flags.DEFINE_boolean("in_memory", True, "In-memory dataset.")
 flags.DEFINE_integer("early_stop_patience", 20, "The patience for early stopping.")
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
-flags.DEFINE_integer("seed", 42, "The random seed.")
-flags.DEFINE_float("label_smoothing", 0.1, "Label smoothing factor.")
-flags.DEFINE_float("gradient_clip", 1.0, "Gradient clipping value.")
+flags.DEFINE_integer("seed", None, "The random seed (None for random).")
+flags.DEFINE_float("label_smoothing", None, "Label smoothing factor (None to disable, 0.0-1.0 to enable).")
+flags.DEFINE_float("gradient_clip", None, "Gradient clipping value (None to disable).")
 
 FLAGS = flags.FLAGS
 main_dir = Path(os.environ.get('MAIN_DIR', '.')) if 'MAIN_DIR' in os.environ else Path('.')
@@ -51,7 +51,7 @@ main_dir = Path(os.environ.get('MAIN_DIR', '.')) if 'MAIN_DIR' in os.environ els
 
 def get_activation_dataloader(dataset_name, llm_model_name, ckpt_step, llm_layer, 
                               batch_size, eval_batch_size, test_set_ratio=0.2, 
-                              from_sparse_data=False, in_memory=True, seed=42):
+                              from_sparse_data=False, in_memory=True, seed=None):
     """
     Load dataset with raw activations instead of correlation matrices.
     
@@ -101,7 +101,7 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
             
             # Prepare labels with label smoothing
             labels = batch.y.long()
-            if FLAGS.label_smoothing > 0:
+            if FLAGS.label_smoothing is not None and FLAGS.label_smoothing > 0:
                 smoothed_labels = F.one_hot(labels, num_classes=2).float()
                 smoothed_labels = smoothed_labels * (1 - FLAGS.label_smoothing) + \
                                  FLAGS.label_smoothing / 2
@@ -179,9 +179,9 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("Training Activation-based Hallucination Detection Probe")
-    logging.info("="*60)
+    logging.info("="*10)
     
     # Device
     device = select_device(FLAGS.gpu_id)

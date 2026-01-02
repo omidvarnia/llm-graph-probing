@@ -49,14 +49,14 @@ flags.DEFINE_float("dropout", 0.0, "The dropout rate.")
 flags.DEFINE_float("test_set_ratio", 0.2, "The size of the test set.")
 flags.DEFINE_boolean("in_memory", False, "In-memory dataset.")
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
-flags.DEFINE_integer("seed", 42, "The random seed.")
+flags.DEFINE_integer("seed", None, "The random seed (None for random).")
 FLAGS = flags.FLAGS
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("STEP 4: Probe Evaluation Pipeline")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info(f"Dataset: {FLAGS.dataset}")
     logging.info(f"Model: {FLAGS.llm_model_name} (checkpoint: {FLAGS.ckpt_step})")
     logging.info(f"Layer: {FLAGS.llm_layer}")
@@ -168,9 +168,9 @@ def main(_):
         all_y, all_pred = eval_model(model, test_data_loader, device, num_layers=FLAGS.num_layers)
     results = np.vstack((all_y.T, all_pred.T)) if FLAGS.dataset == "world_place" else np.vstack((all_y, all_pred))
     logging.info(f"✓ Evaluation completed")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("✓ STEP 4 Complete: Probe Evaluation Finished")
-    logging.info("="*60)
+    logging.info("="*10)
     np.save(str(main_dir / f"saves/graph_probing/{save_model_name}/layer_{FLAGS.llm_layer}/results_density-{density_tag}_dim-{FLAGS.num_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.npy"), results)
 
 

@@ -51,7 +51,7 @@ common:
   #   Note: Requires torch_scatter compiled with ROCm. If unavailable, will fail at Step 3 (train).
   # Option 2: MLP (no graph structure, fallback)
   #   num_layers: -2  (2 hidden layers in MLP)
-  num_layers: 3                         # GCN depth (3 layers = reference config); use -N for MLP with N hidden layers
+  num_layers: -2                         # GCN depth (3 layers = reference config); use -N for MLP with N hidden layers
   hidden_channels: 32                   # GNN hidden size (same as reference)
   gpu_id: 0                             # GPU index to use
   from_sparse_data: true                # Expect sparse FC inputs
@@ -64,10 +64,11 @@ hallucination:
   batch_size: 16                        # LLM forward batch size
   probe_input: corr                     # Probe input type: corr or activation
   eval_batch_size: 32                   # Eval batch size for probe
-  learning_rate: 0.001                  # Probe optimizer learning rate (reference uses 0.001)
+  learning_rate: 0.0001                  # Probe optimizer learning rate (reference uses 0.001)
   num_epochs: 100                       # Max probe training epochs
-  label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
-  gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)
+  label_smoothing: null                  # Label smoothing factor (null=disabled, 0.0-1.0=enabled, higher=more smoothing)
+  gradient_clip: null                     # Max gradient norm for clipping (null=disabled, positive=enabled, prevents exploding gradients)
+  seed: null                            # Random seed for reproducibility (null=auto-generate, integer=fixed split, same seed ensures identical train/test split across all layers)
 
 neuropathology:
   disease_pattern: epilepsy_like        # Disease preset (epilepsy_like, dementia_like, autism_like)

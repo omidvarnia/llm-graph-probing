@@ -1,9 +1,9 @@
 /u/aomidvarnia/.bashrc: line 32: bind: warning: line editing not enabled
 /u/aomidvarnia/.bashrc: line 33: bind: warning: line editing not enabled
 amdgpu.ids: No such file or directory
-2026-01-01 17:19:17,579 - INFO - ================================================================================
+2026-01-01 17:19:17,579 - INFO - =================================
 2026-01-01 17:19:17,579 - INFO - HALLUCINATION DETECTION PIPELINE - DEVICE CONFIGURATION
-2026-01-01 17:19:17,579 - INFO - ================================================================================
+2026-01-01 17:19:17,579 - INFO - =================================
 amdgpu.ids: No such file or directory
 2026-01-01 17:19:19,394 - INFO - ✓ Device Type: ROCm/HIP
 2026-01-01 17:19:19,394 - INFO -   AMD GPU: AMD Radeon Graphics
@@ -15,20 +15,20 @@ GPU Environment Variables:
 2026-01-01 17:19:19,394 - INFO -   HIP_VISIBLE_DEVICES: 0
 2026-01-01 17:19:19,394 - INFO -   ROCR_VISIBLE_DEVICES: 0
 2026-01-01 17:19:19,394 - INFO -   CUDA_VISIBLE_DEVICES: 0
-2026-01-01 17:19:19,394 - INFO - ================================================================================
+2026-01-01 17:19:19,394 - INFO - =================================
 
 2026-01-01 17:19:19,394 - INFO - Starting Graph Probing Analysis
 2026-01-01 17:19:22,121 - INFO - Auto-detected 12 layers in model gpt2
 2026-01-01 17:19:22,121 - INFO - Processing all layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 2026-01-01 17:19:22,121 - INFO - 
-================================================================================
+=================================
 2026-01-01 17:19:22,121 - INFO - CLEANUP: Removing existing results
-2026-01-01 17:19:22,121 - INFO - ================================================================================
+2026-01-01 17:19:22,121 - INFO - =================================
 2026-01-01 17:19:22,132 - INFO - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2
 2026-01-01 17:21:25,461 - INFO - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
 2026-01-01 17:21:25,464 - INFO -   (not found, skipping): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2
 2026-01-01 17:21:25,464 - INFO -   (not found, skipping): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2
-2026-01-01 17:21:25,465 - INFO - ================================================================================
+2026-01-01 17:21:25,465 - INFO - =================================
 
 2026-01-01 17:21:25,467 - INFO - 
 ============================================================

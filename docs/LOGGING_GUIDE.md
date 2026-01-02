@@ -24,12 +24,12 @@ Device: CPU (Data processing)
 Dataset: truthfulqa
 ════════════════════════════════════════════════════════════════════════════════
 
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Dataset Statistics:
   Original size: 5915
   After deduplication: 5879
   Samples removed: 36
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 
 ════════════════════════════════════════════════════════════════════════════════
 STEP 1 COMPLETE: Dataset Construction
@@ -55,12 +55,12 @@ STEP 2: NEURAL NETWORK COMPUTATION (FC MATRICES)
 ════════════════════════════════════════════════════════════════════════════════
 
 GPU ALLOCATION & MULTIPROCESSING CONFIGURATION
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
   Network Density: 5%
   GPU IDs: [0, 1]
   Batch Size: 16
   Worker Processes: 40
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 
 ════════════════════════════════════════════════════════════════════════════════
 Producer Process Allocation (GPU Forward Pass)
@@ -97,14 +97,14 @@ STEP 2 COMPLETE: Neural Topology Computation
 STEP 3: HALLUCINATION DETECTION PROBE TRAINING & EVALUATION
 ════════════════════════════════════════════════════════════════════════════════
 
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: ROCM
   GPU Name: AMD Radeon (MI250X)
   GPU Memory: 110 GB
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Layer Analysis Configuration:
   Layer ID: 5
   Probe Type: GCN (PyTorch Geometric)
@@ -115,7 +115,7 @@ Layer Analysis Configuration:
   Batch Size: 32
   Learning Rate: 0.001
   Early Stop Patience: 20 epochs
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 
 ════════════════════════════════════════════════════════════════════════════════
 LAYER ANALYSIS: TRAINING PHASE
@@ -152,12 +152,12 @@ LAYER ANALYSIS COMPLETE: Layer 5
 STEP 4: HALLUCINATION DETECTION PROBE EVALUATION
 ════════════════════════════════════════════════════════════════════════════════
 
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: ROCM
   GPU Name: AMD Radeon (MI250X)
   GPU Memory: 110 GB
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 
 ════════════════════════════════════════════════════════════════════════════════
 LAYER ANALYSIS: EVALUATION PHASE
@@ -214,7 +214,7 @@ The logging system automatically detects and reports device types:
 All major sections use consistent separator patterns for visual clarity:
 
 - **80-character separators**: `════════════════════════════════════════════════════════════════════════════════`
-- **Sub-section separators**: `────────────────────────────────────────────────────────────────────────────────`
+- **Sub-section separators**: `──────────────────────────────────`
 - **Metrics section headers**: `Layer Analysis Configuration:`, `Classification Metrics:`, etc.
 
 ## Logging Best Practices

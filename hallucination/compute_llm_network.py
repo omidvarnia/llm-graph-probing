@@ -138,7 +138,7 @@ def run_llm(
         logging.info(f"[Producer {rank}] Starting LLM forward passes on {len(input_texts)} texts with batch_size={batch_size}...")
 
         with torch.no_grad():
-            for i in tqdm(range(0, len(input_texts), batch_size), position=rank, desc=f"Producer {rank}: Processing {len(input_texts)} texts"):
+            for i in range(0, len(input_texts), batch_size):
                 inputs = tokenizer(input_texts[i:i+batch_size], padding=True, truncation=False, return_tensors="pt")
                 batch_input_ids = inputs["input_ids"]
                 batch_attention_mask = inputs["attention_mask"]
@@ -437,9 +437,20 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
 
 def main(_):
-    logging.info("\n\n" + "="*80)
+    # Suppress PyTorch/PyG warnings
+    import warnings
+    warnings.filterwarnings('ignore', category=UserWarning)
+    warnings.filterwarnings('ignore', category=FutureWarning)
+    
+    # Configure absl logging format
+    logging.use_absl_handler()
+    import logging as stdlib_logging
+    absl_handler = logging.get_absl_handler()
+    absl_handler.setFormatter(stdlib_logging.Formatter('%(filename)s:%(lineno)d - %(message)s'))
+    
+    logging.info("\n\n" + "="*10)
     logging.info("STEP 2: NEURAL NETWORK COMPUTATION (FC MATRICES)")
-    logging.info("="*80)
+    logging.info("="*10)
     
     # Report main process device configuration
     import torch
@@ -457,7 +468,7 @@ def main(_):
     
     logging.info(f"Dataset: {FLAGS.dataset_name}")
     logging.info(f"Model: {FLAGS.llm_model_name}")
-    logging.info("="*80 + "\n")
+    logging.info("="*10 + "\n")
     
     # ===== LOAD CONFIGURATION =====
     dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
@@ -513,20 +524,20 @@ def main(_):
 
     queue = Queue()
 
-    logging.info("\n" + "="*80)
+    logging.info("="*10)
     logging.info("GPU ALLOCATION & MULTIPROCESSING CONFIGURATION")
-    logging.info("="*80)
+    logging.info("="*10)
     
     # ===== START PRODUCER PROCESSES =====
     producers = []
     hf_model_name = hf_model_name_map.get(model_name, model_name)
     
-    logging.info(f"\n{'─'*80}")
+    logging.info(f"{'─'*10}")
     logging.info(f"Producer Processes (LLM Forward Pass):")
     logging.info(f"  Number of producers: {len(FLAGS.gpu_id)}")
     for i, gpu_id in enumerate(FLAGS.gpu_id):
         logging.info(f"  Producer {i} → GPU {gpu_id}")
-    logging.info(f"{'─'*80}\n")
+    logging.info(f"{'─'*10}\n")
     
     for i, gpu_id in enumerate(FLAGS.gpu_id):
         p = Process(
@@ -552,11 +563,11 @@ def main(_):
     num_workers = FLAGS.num_workers
     consumers = []
     
-    logging.info(f"{'─'*80}")
+    logging.info(f"{'─'*10}")
     logging.info(f"Consumer Processes (FC Matrix Computation):")
     logging.info(f"  Number of consumers: {num_workers}")
     logging.info(f"  Task: Compute and save functional connectivity matrices")
-    logging.info(f"{'─'*80}\n")
+    logging.info(f"{'─'*10}\n")
     for worker_idx in range(num_workers):
         p = Process(
             target=run_corr,
@@ -565,9 +576,9 @@ def main(_):
         consumers.append(p)
 
 
-    logging.info("\n" + "="*80)
+    logging.info("="*10)
     logging.info("PROCESSING PHASE: PRODUCERS & CONSUMERS")
-    logging.info("="*80)
+    logging.info("="*10)
     logging.info(f"Waiting for {len(producers)} producer(s) to complete forward passes...")
     
     producer_errors = []
@@ -616,11 +627,11 @@ def main(_):
     
     logging.info("✓ All consumers completed successfully")
     
-    logging.info("\n" + "="*80)
+    logging.info("="*10)
     logging.info("STEP 2 COMPLETE: Neural Topology Computation")
-    logging.info("="*80)
+    logging.info("="*10)
     logging.info("✓ FC matrices computed and saved successfully")
-    logging.info("="*80 + "\n\n")
+    logging.info("="*10 + "\n\n")
 
 
 if __name__ == "__main__":

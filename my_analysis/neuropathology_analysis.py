@@ -1,7 +1,7 @@
 """
-================================================================================
+=================================
 NEUROPATHOLOGY ANALYSIS
-================================================================================
+=================================
 
 PURPOSE:
     This script orchestrates the 6-step neuropathology analysis pipeline:
@@ -20,7 +20,7 @@ CONFIGURATION:
     Pass config path via: --config /path/to/config.yaml
 
 FILE & FOLDER NAMING CONVENTIONS:
-================================================================================
+=================================
 
 1. MODEL NAME SANITIZATION:
     - Input:  "Qwen/Qwen2.5-0.5B"
@@ -143,7 +143,7 @@ FILE & FOLDER NAMING CONVENTIONS:
    - Distance threshold: Optional, only if specified
    - Density formatting: Removes decimal (0.1 → 01, 0.5 → 05)
 
-================================================================================
+=================================
 EXAMPLE FULL PATHS:
 /ptmp/aomidvarnia/analysis_results/llm_graph/reports/neuropathology_analysis/
   Qwen_Qwen2_5_0_5B/
@@ -153,7 +153,7 @@ EXAMPLE FULL PATHS:
   fc_patho_epilepsy_like_layer_5.npy
   metrics_summary_layer_5.json
 
-================================================================================
+=================================
 """
 
 import sys
@@ -324,7 +324,7 @@ reports_dir.mkdir(parents=True, exist_ok=True)
 step_results = []
 
 # N1: Construct dataset
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N1: Constructing dataset (truthfulqa.csv)...")
 step_log = reports_dir / "n1_construct_dataset.log"
 start = time.monotonic()
@@ -337,7 +337,7 @@ else:
     step_results.append({"step": "N1", "name": "construct_dataset", "status": "ok", "duration_sec": dur, "log": str(step_log), "dataset_path": str(dataset_path)})
 
 # N2: Compute healthy connectivity
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N2: Computing healthy functional connectivity...")
 logging.info("This step may take several minutes depending on dataset size...")
 step_log = reports_dir / "n2_compute_network.log"
@@ -360,7 +360,7 @@ else:
     step_results.append({"step": "N2", "name": "compute_network", "status": "ok", "duration_sec": dur, "log": str(step_log)})
 
 # N3: Train probe on healthy graphs
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N3: Training GNN probe on healthy graphs...")
 logging.info("This step may take several minutes...")
 step_log = reports_dir / "n3_train.log"
@@ -393,7 +393,7 @@ else:
     step_results.append({"step": "N3", "name": "train", "status": "ok", "duration_sec": dur, "log": str(step_log), "best_model": str(best_model)})
 
 # N4: Generate pathological connectivity
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N4: Generating pathological connectivity...")
 logging.info("Transforming healthy FC matrices to simulate disease-like patterns...")
 step_log = reports_dir / "n4_neuropathology_connectivity.log"
@@ -425,7 +425,7 @@ else:
     step_results.append({"step": "N4", "name": "neuropathology_connectivity", "status": "ok", "duration_sec": dur, "log": str(step_log), "artifacts": artifacts})
 
 # N5: Evaluate probe on healthy vs pathological
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N5: Evaluating probe behavior (healthy vs patho)...")
 step_log = reports_dir / "n5_neuropathology_eval.log"
 start = time.monotonic()
@@ -457,7 +457,7 @@ else:
     step_results.append({"step": "N5", "name": "neuropathology_eval", "status": "ok", "duration_sec": dur, "log": str(step_log), "delta_probs_mean": delta_prob, "summary": str(eval_summary)})
 
 # N6: Graph metrics comparison
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("N6: Computing graph-theoretic metrics (healthy vs patho)...")
 step_log = reports_dir / "n6_neuropathology_graph_metrics.log"
 start = time.monotonic()
@@ -495,7 +495,7 @@ try:
 except Exception as e:
     logging.warning(f"Could not write summary: {e}")
 
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("✓ Neuropathology Simulation Analysis Complete!")
-logging.info("="*60)
+logging.info("="*10)
 logging.info(f"Reports saved to: {reports_dir}")

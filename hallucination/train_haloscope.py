@@ -18,7 +18,7 @@ flags.DEFINE_float("test_set_ratio", 0.2, "The ratio of the test set.")
 flags.DEFINE_boolean("in_memory", True, "In-memory dataset.")
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 flags.DEFINE_boolean("resume", False, "Whether to resume training from the best model.")
-flags.DEFINE_integer("seed", 42, "The random seed.")
+flags.DEFINE_integer("seed", None, "The random seed (None for random).")
 FLAGS = flags.FLAGS
 
 

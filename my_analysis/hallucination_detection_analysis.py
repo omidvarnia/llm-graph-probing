@@ -1,7 +1,7 @@
 """
-================================================================================
+=================================
 HALLUCINATION DETECTION ANALYSIS
-================================================================================
+=================================
 
 PURPOSE:
     This script orchestrates the 3-step hallucination detection pipeline:
@@ -14,7 +14,7 @@ CONFIGURATION:
     Pass config path via: --config /path/to/config.yaml
 
 FILE & FOLDER NAMING CONVENTIONS:
-================================================================================
+=================================
 
 1. MODEL NAME SANITIZATION:
     - Input:  "Qwen/Qwen2.5-0.5B"
@@ -114,14 +114,14 @@ FILE & FOLDER NAMING CONVENTIONS:
    - Condition labels: healthy, hallucination, etc.
    - Model checkpoints: {step}.pt format (best_model.pt, final_model.pt)
 
-================================================================================
+=================================
 EXAMPLE FULL PATH:
 /ptmp/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/
   Qwen_Qwen2_5_0_5B/
   layer_5/
   fc_healthy_layer_5.npy
 
-================================================================================
+=================================
 """
 
 import sys
@@ -204,6 +204,13 @@ def run(cmd, *, cwd: Path, env: dict, log_file: Path | None = None) -> int:
             continue
         # Skip known benign warnings (e.g., sliding window attention advisory)
         if "Sliding Window Attention is enabled" in line:
+            continue
+        # Skip PyTorch Geometric import warnings (torch-scatter, torch-cluster, etc.)
+        if "torch_geometric/__init__.py" in line and "UserWarning" in line:
+            continue
+        if "undefined symbol:" in line and "_version_cuda.so" in line:
+            continue
+        if "import torch_geometric.typing" in line:
             continue
         # Skip absl logging format (e.g., "I0102 10:03:21.477567 22613446973248")
         # Pattern: Single letter + 4 digits (MMDD) + space + timestamp
@@ -302,8 +309,31 @@ num_layers = int(common_cfg.get('num_layers', 2))
 learning_rate = float(hallu_cfg.get('learning_rate', 0.001))
 num_epochs = int(hallu_cfg.get('num_epochs', 100))
 early_stop_patience = int(hallu_cfg.get('early_stop_patience', 20))
-label_smoothing = float(hallu_cfg.get('label_smoothing', 0.1))
-gradient_clip = float(hallu_cfg.get('gradient_clip', 1.0))
+# Label smoothing is optional: null means not applied, positive number means applied
+label_smoothing = hallu_cfg.get('label_smoothing', 0.0)
+if label_smoothing is not None:
+    label_smoothing = float(label_smoothing)
+# Gradient clipping is optional: null means not applied, positive number means applied
+gradient_clip = hallu_cfg.get('gradient_clip', 1.0)
+if gradient_clip is not None:
+    gradient_clip = float(gradient_clip)
+
+# =====================================
+# SEED HANDLING FOR REPRODUCIBILITY
+# =====================================
+# If seed is None/null in config, generate a random seed once at the beginning
+# This ensures ALL layers use the SAME train/test split for fair comparison
+# The generated seed is saved and logged for reproducibility
+seed = hallu_cfg.get('seed', None)  # None means random (no seed)
+if seed is not None:
+    seed = int(seed)
+else:
+    # Generate a random seed based on current time
+    import random
+    import time
+    seed = int(time.time() * 1000000) % (2**32)  # 32-bit seed for PyTorch compatibility
+    # Alternative: seed = random.randint(0, 2**32 - 1)
+
 gpu_id = int(common_cfg.get('gpu_id', 0))
 from_sparse_data = common_cfg.get('from_sparse_data', True)
 if isinstance(from_sparse_data, str):
@@ -334,9 +364,9 @@ if 'CUDA_VISIBLE_DEVICES' in os.environ:
 python_exe = sys.executable
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(filename)s:%(lineno)d - %(message)s', datefmt='%H:%M:%S')
-logging.info("="*80)
+logging.info("="*10)
 logging.info("HALLUCINATION DETECTION PIPELINE - DEVICE CONFIGURATION")
-logging.info("="*80)
+logging.info("="*10)
 
 # =====================================
 # CENTRALIZED DEVICE SELECTION
@@ -399,7 +429,7 @@ logging.info(f"\nGPU Environment Variables:")
 logging.info(f"  HIP_VISIBLE_DEVICES: {env.get('HIP_VISIBLE_DEVICES', 'Not set')}")
 logging.info(f"  ROCR_VISIBLE_DEVICES: {env.get('ROCR_VISIBLE_DEVICES', 'Not set')}")
 logging.info(f"  CUDA_VISIBLE_DEVICES: {env.get('CUDA_VISIBLE_DEVICES', 'Not set')}")
-logging.info("="*80 + "\n")
+logging.info("="*10 + "\n")
 
 logging.info("Starting Graph Probing Analysis")
 # embed(globals(), locals())
@@ -429,13 +459,52 @@ layer_id = layer_ids[0]
 # Output directories for interim artifacts
 # Sanitize model name: replace '/' and '-' with '_'
 model_tag = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+# Add probe type to model tag for Step 3+ outputs (training, evaluation, analysis)
+# Step 1 & 2 outputs (dataset, network) use model_tag WITHOUT probe type for reusability
+probe_type = "gcn" if num_layers > 0 else "mlp"
+model_tag_with_probe = f"{model_tag}_{probe_type}"
+
+# =============================================================================
+# SEED LOGGING AND PERSISTENCE
+# =============================================================================
+logging.info("="*10)
+logging.info("REPRODUCIBILITY: Random Seed Configuration")
+logging.info("="*10)
+
+# Report the seed being used (whether from config or auto-generated)
+seed_source = "from config file" if hallu_cfg.get('seed', None) is not None else "AUTO-GENERATED"
+logging.info(f"Random Seed: {seed} ({seed_source})")
+logging.info(f"  This seed will be used for ALL layers to ensure identical train/test splits")
+logging.info(f"  Train/Test Split: 80/20 ({int(5915*0.8)}/{int(5915*0.2)} samples)")
+
+# Save seed to a file for reproducibility
+reports_root = main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe
+reports_root.mkdir(parents=True, exist_ok=True)
+seed_file = reports_root / "random_seed.txt"
+with open(seed_file, 'w') as f:
+    f.write(f"# Random Seed Configuration\n")
+    f.write(f"# Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+    f.write(f"# Source: {seed_source}\n")
+    f.write(f"# Model: {model_name}\n")
+    f.write(f"# Dataset: {dataset_name}\n")
+    f.write(f"# Layers: {layer_ids}\n")
+    f.write(f"\n")
+    f.write(f"seed={seed}\n")
+    f.write(f"\n")
+    f.write(f"# To reproduce this exact analysis, add this to your config YAML:\n")
+    f.write(f"# hallucination:\n")
+    f.write(f"#   seed: {seed}\n")
+
+logging.info(f"✓ Seed saved to: {seed_file}")
+logging.info("  You can use this seed in future runs to reproduce the exact same train/test split")
+logging.info("="*10 + "\n")
 
 # =============================================================================
 # CLEANUP: Selective cleanup - preserve Step 1 & 2 outputs for reuse
 # =============================================================================
-logging.info("\n" + "="*80)
+logging.info("="*10)
 logging.info("SELECTIVE CLEANUP: Preserving Step 1 & 2 outputs")
-logging.info("="*80)
+logging.info("="*10)
 
 # Define all output directories that will be cleaned
 sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
@@ -447,7 +516,7 @@ else:
 # Only remove Step 3+ outputs (training, evaluation, analysis)
 # Preserve Step 1 (dataset) and Step 2 (network) for reuse
 cleanup_dirs = [
-    main_dir / "reports" / "hallucination_analysis" / model_tag,
+    main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe,
     main_dir / "saves" / "hallucination" / dataset_name / model_dir_name,
     main_dir / "runs" / "hallucination" / dataset_name / model_dir_name,
 ]
@@ -471,10 +540,10 @@ if preserved_dir.exists():
 else:
     logging.info(f"  No existing Step 1 & 2 outputs found at: {preserved_dir}")
 
-logging.info("="*80 + "\n")
+logging.info("="*10 + "\n")
 
 # Create fresh output directories
-reports_root = main_dir / "reports" / "hallucination_analysis" / model_tag
+reports_root = main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe
 reports_root.mkdir(parents=True, exist_ok=True)
 
 # Copy pipeline config into the model folder for provenance
@@ -594,9 +663,9 @@ step_results = []
 # ========================================================================
 # Step 1: Prepare the dataset (with reuse check)
 # ========================================================================
-print("\n" + "="*80)
+print("\n" + "="*10)
 print("Step 1 - Dataset Construction (Extracting LLM Activations)")
-print("="*80 + "\n")
+print("="*10 + "\n")
 logging.info(f"Dataset: {dataset_name}")
 logging.info(f"Model: {model_name} (sanitized: {model_tag})")
 logging.info(f"Checkpoint step: {ckpt_step}")
@@ -716,9 +785,9 @@ except Exception as e:
 # -----------------------------
 # Step 2: Generate the neural topology (with reuse check)
 # -----------------------------
-print("\n" + "="*80)
+print("\n" + "="*10)
 print("Step 2 - Neural Topology (Network Graph) Computation")
-print("="*80 + "\n")
+print("="*10 + "\n")
 logging.info(f"Layer IDs: {layer_ids}")
 logging.info(f"Network density: {network_density}")
 logging.info(f"Sparse mode: {from_sparse_data}")
@@ -919,9 +988,9 @@ except Exception as e:
 # ========================================================================
 # Step 3: Train the probes
 # ========================================================================
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("STEP 3: Training Graph Neural Network Probes")
-logging.info("="*60)
+logging.info("="*10)
 logging.info(f"Probe input: {probe_input}")
 logging.info(f"Density: {network_density}")
 logging.info(f"Num channels: {num_channels}")
@@ -931,8 +1000,10 @@ logging.info(f"Batch size: {batch_size}")
 logging.info(f"Eval batch size: {eval_batch_size}")
 logging.info(f"Num epochs: {num_epochs}")
 logging.info(f"Early stop patience: {early_stop_patience}")
-logging.info(f"Label smoothing: {label_smoothing}")
-logging.info(f"Gradient clipping: {gradient_clip}")
+logging.info(f"Label smoothing: {label_smoothing if label_smoothing is not None else 'None (disabled)'}")
+logging.info(f"Gradient clipping: {gradient_clip if gradient_clip is not None else 'None (disabled)'}")
+logging.info(f"Random seed: {seed} ({seed_source})")  # Show seed source (config or auto-generated)
+logging.info(f"GPU ID: {gpu_id}")
 
 # Sanity checks for Step 3
 if num_epochs <= 0:
@@ -945,16 +1016,16 @@ if learning_rate <= 0:
     sys.exit(1)
 logging.info(f"✓ SANITY CHECK: learning_rate={learning_rate} is valid")
 
-if not (0 <= label_smoothing < 1.0):
-    logging.error(f"✗ SANITY CHECK FAILED: label_smoothing must be 0 <= x < 1.0, got {label_smoothing}")
+if label_smoothing is not None and not (0 <= label_smoothing < 1.0):
+    logging.error(f"✗ SANITY CHECK FAILED: label_smoothing must be 0 <= x < 1.0 or None, got {label_smoothing}")
     sys.exit(1)
-logging.info(f"✓ SANITY CHECK: label_smoothing={label_smoothing} is valid")
+logging.info(f"✓ SANITY CHECK: label_smoothing={label_smoothing if label_smoothing is not None else 'disabled'} is valid")
 
 # Train probes for ALL layers
 for lid in layer_ids:
-    print("\n" + "="*80)
+    print("\n" + "="*10)
     print(f"Layer {lid}: Step 3 - Training Probe")
-    print("="*80 + "\n")
+    print("="*10 + "\n")
     logging.info(f"Starting probe training for layer {lid}")
     lid_reports_dir = reports_root / f"layer_{lid}"
     lid_reports_dir.mkdir(parents=True, exist_ok=True)
@@ -981,10 +1052,9 @@ for lid in layer_ids:
                 f"--lr={learning_rate}",
                 f"--num_epochs={num_epochs}",
                 f"--early_stop_patience={early_stop_patience}",
-                f"--label_smoothing={label_smoothing}",
-                f"--gradient_clip={gradient_clip}",
                 f"--gpu_id={gpu_id}",
-            ] + (["--from_sparse_data"] if from_sparse_data else []),
+                f"--seed={seed}",  # Always pass seed (auto-generated if not in config)
+            ] + ([f"--label_smoothing={label_smoothing}"] if label_smoothing is not None else []) + ([f"--gradient_clip={gradient_clip}"] if gradient_clip is not None else []) + (["--from_sparse_data"] if from_sparse_data else []),
             cwd=project_dir,
             env=env,
             log_file=step3_log,
@@ -1068,16 +1138,16 @@ for lid in layer_ids:
 # -----------------------------
 # Step 4: Evaluate the probes
 # -----------------------------
-print("\n" + "="*80)
+print("\n" + "="*10)
 print("Step 4 - Evaluating Trained Probes")
-print("="*80 + "\n")
+print("="*10 + "\n")
 logging.info(f"Network density: {network_density}")
 logging.info(f"Layers to evaluate: {layer_ids}")
 
 for lid in layer_ids:
-    print("\n" + "="*80)
+    print("\n" + "="*10)
     print(f"Layer {lid}: Step 4 - Evaluation")
-    print("="*80 + "\n")
+    print("="*10 + "\n")
     logging.info(f"Starting evaluation for layer {lid}")
     lid_reports_dir = reports_root / f"layer_{lid}"
     step4_log = lid_reports_dir / "step4_eval.log"
@@ -1165,16 +1235,16 @@ for lid in layer_ids:
 # -----------------------------
 # Step 5: Graph statistics
 # -----------------------------
-print("\n" + "="*80)
+print("\n" + "="*10)
 print("Step 5 - Graph Statistics & Analysis")
-print("="*80 + "\n")
+print("="*10 + "\n")
 logging.info(f"Layers to analyze: {layer_ids}")
 logging.info(f"Network density: {network_density}")
 layers_completed: list[int] = []
 for lid in layer_ids:
-    print("\n" + "="*80)
+    print("\n" + "="*10)
     print(f"Layer {lid}: Step 5 - Graph Analysis")
-    print("="*80 + "\n")
+    print("="*10 + "\n")
     logging.info(f"Executing graph_analysis.py for layer {lid}...")
     lid_reports_dir = reports_root / f"layer_{lid}"
     lid_reports_dir.mkdir(parents=True, exist_ok=True)
@@ -1245,9 +1315,9 @@ for lid in layer_ids:
 # -----------------------------
 # Generate Classification Metrics Summary
 # -----------------------------
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("CLASSIFICATION METRICS SUMMARY")
-logging.info("="*60)
+logging.info("="*10)
 
 # Collect evaluation metrics for all layers
 eval_results = [r for r in step_results if r.get("step") == 4 and r.get("status") == "ok" and "metrics" in r]
@@ -1255,7 +1325,7 @@ eval_results = [r for r in step_results if r.get("step") == 4 and r.get("status"
 if eval_results:
     logging.info("\n{:<8} {:<10} {:<10} {:<10} {:<10} {:<12}".format(
         "Layer", "Accuracy", "Precision", "Recall", "F1 Score", "Above Chance"))
-    logging.info("-" * 72)
+    logging.info("-" * 20)
     
     for result in sorted(eval_results, key=lambda x: x.get("layer", 0)):
         layer = result.get("layer", "?")
@@ -1321,9 +1391,9 @@ except Exception as e:
 # -----------------------------
 # Generate LaTeX Report
 # -----------------------------
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("Generating publication-ready LaTeX report...")
-logging.info("="*60)
+logging.info("="*10)
 
 try:
     from hallucination.generate_report import generate_latex_report
@@ -1366,9 +1436,9 @@ except Exception as e:
 # ============================================
 # Generate Figure 5 Comparison Plots
 # ============================================
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("Step 6: Generating comparison plots (Figure 5b-c)")
-logging.info("="*60)
+logging.info("="*10)
 
 try:
     from hallucination.comparison import create_comparison_figure, create_layer_metrics_plot
@@ -1401,9 +1471,9 @@ except Exception as e:
     logging.warning(f"Could not generate comparison plots: {e}")
     logging.info("Continuing without plot generation...")
 
-logging.info("\n" + "="*60)
+logging.info("="*10)
 logging.info("✓ Graph Probing Analysis Complete!")
-logging.info("="*60)
+logging.info("="*10)
 logging.info("Summary:")
 logging.info(f"  - Dataset: {dataset_name}")
 logging.info(f"  - Model: {model_name}")

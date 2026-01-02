@@ -7,7 +7,7 @@
 
 ```
 Testing PyTorch Geometric installation and device detection...
-================================================================================
+=================================
 ✓ PyTorch Geometric imports successful
 ✓ Device detection loaded
   Device: cpu
@@ -16,7 +16,7 @@ Testing PyTorch Geometric installation and device detection...
 ✓ GCNProbe instantiated successfully
   Number of GCN layers: 1
   Layer type: GCNConv
-================================================================================
+=================================
 All tests passed! PyTorch Geometric is working correctly.
 ```
 
@@ -121,11 +121,11 @@ PyTorch Geometric backend initialized: CPU (fallback after GPU test failed)
 When running training, you'll see:
 
 ```
-================================================================================
+=================================
 STEP 3: HALLUCINATION DETECTION PROBE TRAINING & EVALUATION
-================================================================================
+=================================
 
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: CPU
   Device Index: 0
@@ -133,7 +133,7 @@ Device Configuration:
   PyTorch Geometric Backend: CPU (no GPU available)
 Dataset: truthfulqa
 Model: gpt2
-================================================================================
+=================================
 ```
 
 ---

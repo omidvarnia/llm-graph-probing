@@ -55,14 +55,14 @@ flags.DEFINE_boolean("in_memory", True, "In-memory dataset.")
 flags.DEFINE_integer("early_stop_patience", 20, "The patience for early stopping.")
 flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 flags.DEFINE_boolean("resume", False, "Whether to resume training from the best model.")
-flags.DEFINE_integer("seed", 42, "The random seed.")
+flags.DEFINE_integer("seed", None, "The random seed (None for random).")
 FLAGS = flags.FLAGS
 
 
 def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("STEP 3: Probe Training Pipeline")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info(f"Model name: {save_model_name}")
     logging.info(f"Layer: {FLAGS.llm_layer}")
     logging.info(f"Learning rate: {FLAGS.lr}")

@@ -126,7 +126,7 @@ def main(_):
 ```
 PyTorch Geometric backend initialized: CUDA - NVIDIA A100-SXM4-40GB
 GCNProbe initialized with PyTorch Geometric on device: CUDA - NVIDIA A100-SXM4-40GB
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: CUDA
   Device Index: 0
@@ -140,7 +140,7 @@ Device Configuration:
 ```
 PyTorch Geometric backend initialized: ROCm/HIP - AMD Instinct MI250X
 GCNProbe initialized with PyTorch Geometric on device: ROCm/HIP - AMD Instinct MI250X
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: CUDA
   Device Index: 0
@@ -155,7 +155,7 @@ Device Configuration:
 WARNING:absl:CUDA device test failed: CUDA out of memory. Falling back to CPU.
 PyTorch Geometric backend initialized: CPU (fallback after GPU test failed)
 GCNProbe initialized with PyTorch Geometric on device: CPU (fallback after GPU test failed)
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────
 Device Configuration:
   Device Type: CPU
   Device Index: 0

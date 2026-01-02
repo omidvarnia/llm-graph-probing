@@ -154,9 +154,9 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, network_density=1.0):
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("STEP 2: Neural Topology (Network Graph) Computation")
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info(f"Dataset: {FLAGS.dataset}")
     logging.info(f"Model: {FLAGS.llm_model_name} (checkpoint: {FLAGS.ckpt_step})")
     logging.info(f"Layer(s): {FLAGS.llm_layer}")
@@ -232,10 +232,10 @@ def main(_):
         consumer.join()
     logging.info("✓ All consumers completed")
     
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("✓ STEP 2 Complete: Neural Topology Computation Finished")
     logging.info(f"✓ Results saved to: {dir_name}")
-    logging.info("="*60)
+    logging.info("="*10)
     model_name = FLAGS.llm_model_name
     hf_model_name = hf_model_name_map[model_name]
     if FLAGS.ckpt_step == -1:

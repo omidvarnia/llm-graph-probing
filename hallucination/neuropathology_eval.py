@@ -36,7 +36,7 @@ flags.DEFINE_integer("gpu_id", 0, "GPU ID.")
 flags.DEFINE_integer("num_workers", 2, "DataLoader workers.")
 flags.DEFINE_integer("prefetch_factor", 2, "DataLoader prefetch.")
 flags.DEFINE_float("test_set_ratio", 0.2, "Test split ratio.")
-flags.DEFINE_integer("seed", 42, "Random seed.")
+flags.DEFINE_integer("seed", None, "Random seed (None for random).")
 FLAGS = flags.FLAGS
 
 
@@ -133,9 +133,9 @@ def _eval_condition(model, loader, device) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def main(_):
-    logging.info("="*60)
+    logging.info("="*10)
     logging.info("Neuropathology Evaluation (probe on healthy vs pathological graphs)")
-    logging.info("="*60)
+    logging.info("="*10)
 
     device = torch.device(f"cuda:{FLAGS.gpu_id}")
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
@@ -256,9 +256,9 @@ def main(_):
     }
     (reports_dir / "summary_eval.json").write_text(__import__("json").dumps(summary, indent=2), encoding="utf-8")
 
-    logging.info("\n" + "="*60)
+    logging.info("="*10)
     logging.info("✓ Neuropathology evaluation complete")
-    logging.info("="*60)
+    logging.info("="*10)
 
 
 if __name__ == "__main__":

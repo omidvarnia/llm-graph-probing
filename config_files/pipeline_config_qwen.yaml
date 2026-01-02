@@ -69,8 +69,9 @@ hallucination:
   eval_batch_size: 32                   # Eval batch size for probe
   learning_rate: 0.001                  # Probe optimizer learning rate (reference uses 0.001)
   num_epochs: 100                       # Max probe training epochs (reference uses 10, but we use 100 with early stopping)
-  label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
-  gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)
+  label_smoothing: null                 # Label smoothing factor (null=disabled, 0.0-1.0=enabled, higher=more smoothing)
+  gradient_clip: 1.0                    # Max gradient norm for clipping (null=disabled, positive=enabled, prevents exploding gradients)
+  seed: null                            # Random seed for reproducibility (null=auto-generate, integer=fixed split, same seed ensures identical train/test split across all layers)
 
 neuropathology:
   disease_pattern: epilepsy_like        # Disease preset (epilepsy_like, dementia_like, autism_like)
