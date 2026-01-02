@@ -184,6 +184,8 @@ def main(_):
     logging.info("="*60)
     logging.info("✓ STEP 1 Complete: Dataset Construction Finished")
     logging.info("="*60)
+    logging.info("\n")
+    logging.info("\n" + "="*80)
 
 
 if __name__ == "__main__":

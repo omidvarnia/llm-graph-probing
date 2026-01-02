@@ -213,9 +213,9 @@ def print_statistics(question_metrics):
     
 
 def main(_):
-    logging.info("="*60)
-    logging.info("Graph Analysis: Neural Topology Correlation")
-    logging.info("="*60)
+    logging.info("\n\n" + "="*80)
+    logging.info("STEP 5: GRAPH ANALYSIS (NEURAL TOPOLOGY CORRELATION)")
+    logging.info("="*80)
     
     # ===== CONFIGURATION =====
     model_name = FLAGS.llm_model_name
@@ -226,11 +226,13 @@ def main(_):
     else:
         model_dir = main_dir / "data/hallucination" / FLAGS.dataset_name / f"{model_tag}_step{FLAGS.ckpt_step}"
     
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
     logging.info(f"Model: {FLAGS.llm_model_name}")
+    logging.info("="*80 + "\n")
+    
     logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
     logging.info(f"Layer: {FLAGS.layer}")
     logging.info(f"Feature: {FLAGS.feature}")
-    logging.info(f"Dataset: {FLAGS.dataset_name}")
     logging.info(f"Data directory: {model_dir}")
     # Prepare results directory under MAIN_DIR/reports/hallucination_analysis/{model_tag}/layer_{layer}
     reports_dir = main_dir / "reports" / "hallucination_analysis" / model_tag / f"layer_{FLAGS.layer}"
@@ -299,6 +301,12 @@ def main(_):
     
     except Exception as e:
         logging.warning(f"Could not compute coupling index: {e}")
+    
+    logging.info("\n" + "="*80)
+    logging.info("STEP 5 COMPLETE: Graph Analysis")
+    logging.info("="*80)
+    logging.info("✓ Graph analysis completed successfully")
+    logging.info("="*80 + "\n\n")
 
 
 if __name__ == "__main__":

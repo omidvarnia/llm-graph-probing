@@ -38,14 +38,15 @@ flags.DEFINE_boolean("resume", False, "Whether to resume training from the best 
 flags.DEFINE_integer("seed", 42, "The random seed.")
 flags.DEFINE_float("label_smoothing", 0.1, "Label smoothing factor.")
 flags.DEFINE_float("gradient_clip", 1.0, "Gradient clipping value.")
-flags.DEFINE_integer("warmup_epochs", 5, "Number of warmup epochs.")
 FLAGS = flags.FLAGS
 
 main_dir = Path(os.environ.get('MAIN_DIR', '.')) if 'MAIN_DIR' in os.environ else Path('.')
 
-def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, warmup_scheduler, writer, save_model_name, device):
+def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
     accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-    torch.cuda.empty_cache()
+    # Only empty GPU cache if using CUDA
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     logging.info(f"Initial Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
@@ -118,110 +119,115 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
             optimizer.zero_grad()
             batch_size = 0
             loss, batch_size = get_loss_batch_size(data)
-            
-            # Check for NaN loss before backward
-            if torch.isnan(loss):
-                logging.warning(f"NaN loss at batch, skipping this batch")
-                continue
-            
-            # Clamp loss to prevent explosion
-            loss = torch.clamp(loss, min=0, max=1e4)
             loss.backward()
-            
-            # Gradient clipping
             torch.nn.utils.clip_grad_norm_(model.parameters(), FLAGS.gradient_clip)
-            
             optimizer.step()
             total_loss += loss.item() * batch_size
             num_graphs += batch_size
         
-        # Update learning rate
-        if epoch < FLAGS.warmup_epochs:
-            warmup_scheduler.step()
-        
-        # Avoid NaN in average loss calculation
-        if num_graphs == 0:
-            avg_loss = float('nan')
-        else:
-            avg_loss = total_loss / num_graphs
-            avg_loss = min(avg_loss, 1e4)  # Cap very large losses
-            
-        current_lr = optimizer.param_groups[0]['lr']
-        logging.info(f"[Epoch {epoch + 1}] Train Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
+        avg_loss = total_loss / num_graphs
+        logging.info(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")
         writer.add_scalar("train/loss", avg_loss, epoch + 1)
-        writer.add_scalar("train/lr", current_lr, epoch + 1)
-        torch.cuda.empty_cache()
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
         accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-        torch.cuda.empty_cache()
-        tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-        logging.info(f"[Epoch {epoch + 1}] Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-        logging.info(f"[Epoch {epoch + 1}] Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+        logging.info(f"Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+        logging.info(f"Confusion Matrix:\n{cm}")
         for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
             writer.add_scalar(f"test/{metric}", value, epoch + 1)
-        
-        # Step scheduler only after warmup
-        if epoch >= FLAGS.warmup_epochs:
-            scheduler.step(f1)
+        scheduler.step(f1)
 
-        # Use F1 score for best model selection (better for imbalanced data)
         if f1 > best_metrics["f1"]:
             for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
                 best_metrics[metric] = value
             best_metrics["epoch"] = epoch + 1
             best_metrics["cm"] = cm.copy()
             torch.save(model.state_dict(), model_save_path)
+            logging.info(f"New best model saved to: {model_save_path} (F1: {f1:.4f})")
             epochs_no_improve = 0
         else:
-            # Only count epochs_no_improve after warmup period
-            if epoch >= FLAGS.warmup_epochs:
-                epochs_no_improve += 1
-                if epochs_no_improve >= FLAGS.early_stop_patience:
-                    logging.info(f"Early stopping at epoch {epoch + 1} (no improvement for {epochs_no_improve} epochs)")
-                    break
+            epochs_no_improve += 1
+            if epochs_no_improve >= FLAGS.early_stop_patience:
+                logging.info(f"Early stopping at epoch {epoch + 1}")
+                break
     
     logging.info(f"Best Epoch: {best_metrics['epoch']}")
     for metric in ["accuracy", "precision", "recall", "f1"]:
         logging.info(f"Best Test {metric.capitalize()}: {best_metrics[metric]:.4f}")
-    cm = best_metrics['cm']
-    tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-    logging.info(f"Best Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
+    logging.info(f"Best Confusion Matrix:\n{best_metrics['cm']}")
+    
+    logging.info("\n" + "="*80)
+    logging.info("STEP 3 COMPLETE: Probe Training & Evaluation")
+    logging.info("="*80)
+    logging.info("✓ Probe training completed successfully")
+    logging.info("="*80 + "\n\n")
  
 
 def main(_):
-    logging.info("="*60)
-    logging.info("Training Hallucination Detection Probes")
-    logging.info("="*60)
+    # Log PyTorch Geometric backend device FIRST (before any other output)
+    from utils.probing_model import PYG_DEVICE_INFO
+    logging.info(f"PyTorch Geometric Backend: {PYG_DEVICE_INFO}")
+    
+    logging.info("\n" + "="*80)
+    logging.info("STEP 3: HALLUCINATION DETECTION PROBE TRAINING & EVALUATION")
+    logging.info("="*80)
     
     # ===== DEVICE & CONFIGURATION =====
     device = select_device(FLAGS.gpu_id)
-
-    # Sanitize model name by replacing '/', '-', and '.' with '_' for filesystem paths
-    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
-    
-    if FLAGS.ckpt_step == -1:
-        model_dir = sanitized_model_name
-    else:
-        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
-    save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
+    logging.info(f"\n{'─'*80}")
+    logging.info(f"Device Configuration:")
+    logging.info(f"  Device Type: {device.type.upper()}")
+    logging.info(f"  Device Index: {device.index if device.index is not None else 0}")
+    logging.info(f"  PyTorch CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logging.info(f"  GPU Name: {torch.cuda.get_device_name(FLAGS.gpu_id)}")
+        logging.info(f"  GPU Memory: {torch.cuda.get_device_properties(FLAGS.gpu_id).total_memory / 1e9:.1f} GB")
     
     logging.info(f"Dataset: {FLAGS.dataset_name}")
     logging.info(f"Model: {FLAGS.llm_model_name}")
-    logging.info(f"Layer: {FLAGS.llm_layer}")
-    logging.info(f"Probe input: {FLAGS.probe_input}")
-    logging.info(f"Network density: {FLAGS.density}")
-    logging.info(f"From sparse data: {FLAGS.from_sparse_data}")
-    logging.info(f"Architecture: {FLAGS.num_layers} layers, {FLAGS.hidden_channels} channels")
-    logging.info(f"Training: {FLAGS.num_epochs} epochs, lr={FLAGS.lr}, batch_size={FLAGS.batch_size}")
-    logging.info(f"Early stopping patience: {FLAGS.early_stop_patience}")
-    logging.info(f"Seed: {FLAGS.seed}")
-    logging.info(f"Label smoothing: {FLAGS.label_smoothing}, Gradient clip: {FLAGS.gradient_clip}")
-    logging.info(f"Warmup epochs: {FLAGS.warmup_epochs}")
+    logging.info("="*80 + "\n")
+
+    if FLAGS.ckpt_step == -1:
+        model_dir = FLAGS.llm_model_name
+    else:
+        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
+    save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
+    
+    # Log layer analysis header
+    logging.info(f"\n{'─'*80}")
+    logging.info(f"Layer Analysis Configuration:")
+    logging.info(f"  Layer ID: {FLAGS.llm_layer}")
+    logging.info(f"  Probe Input: {FLAGS.probe_input}")
+    logging.info(f"  Network Density: {FLAGS.density:.1%}")
+    logging.info(f"  From Sparse Data: {FLAGS.from_sparse_data}")
+    logging.info(f"  Architecture: {FLAGS.num_layers}-layer GCN, {FLAGS.hidden_channels} hidden channels")
+    logging.info(f"{'─'*80}\n")
+    
+    logging.info(f"Dataset Configuration:")
+    logging.info(f"  Dataset Name: {FLAGS.dataset_name}")
+    logging.info(f"  Model: {FLAGS.llm_model_name}")
+    logging.info(f"  Batch Size: {FLAGS.batch_size}")
+    logging.info(f"  Test Set Ratio: {FLAGS.test_set_ratio:.1%}")
+    logging.info(f"")
+    
+    logging.info(f"Training Hyperparameters:")
+    logging.info(f"  Max Epochs: {FLAGS.num_epochs}")
+    logging.info(f"  Learning Rate: {FLAGS.lr}")
+    logging.info(f"  Label Smoothing: {FLAGS.label_smoothing}")
+    logging.info(f"  Gradient Clip: {FLAGS.gradient_clip}")
+    logging.info(f"  Early Stop Patience: {FLAGS.early_stop_patience} epochs")
+    logging.info(f"  Random Seed: {FLAGS.seed}")
     
     # Warn if learning rate is very small (< 1e-4)
     if FLAGS.lr < 1e-4:
-        logging.warning(f"⚠️ WARNING: Learning rate is very small ({FLAGS.lr:.2e}). This can cause numerical instability!")
-        logging.warning(f"          Consider increasing to 0.001 or higher for better training stability.")
+        logging.warning(f"\n⚠️  WARNING: Learning rate is very small ({FLAGS.lr:.2e})!")
+        logging.warning(f"             This can cause numerical instability.")
+        logging.warning(f"             Consider increasing to 0.001 or higher.\n")
 
     # Calculate class weights for imbalanced data
     dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
@@ -285,14 +291,8 @@ def main(_):
     logging.info(f"Train samples: {len(train_loader.dataset)}")
     logging.info(f"Test samples: {len(test_loader.dataset)}")
 
-    # Better optimizer configuration
-    optimizer = torch.optim.AdamW(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay, betas=(0.9, 0.999))
-    
-    # Warmup scheduler - starts at 0.5x instead of 0.1x to avoid very small LRs
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.5, total_iters=FLAGS.warmup_epochs)
-    
-    # Main scheduler (now uses F1 score)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, min_lr=1e-7, verbose=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1, patience=5, min_lr=1e-6)
     writer = SummaryWriter(log_dir=main_dir / f"runs/{save_model_name}/layer_{FLAGS.llm_layer}")
     writer.add_hparams(
         {
@@ -310,14 +310,19 @@ def main(_):
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     # ===== TRAINING =====
-    logging.info("\n" + "="*60)
-    logging.info("Starting training...")
-    logging.info("="*60)
-    train_model(model, train_loader, test_loader, optimizer, scheduler, warmup_scheduler, writer, save_model_name, device)
+    logging.info("\n" + "="*80)
+    logging.info("LAYER ANALYSIS: TRAINING PHASE")
+    logging.info("="*80)
+    logging.info(f"Layer {FLAGS.llm_layer} - Training probe on {len(train_loader.dataset)} samples")
+    logging.info("="*80 + "\n")
     
-    logging.info("\n" + "="*60)
-    logging.info("✓ Training completed successfully")
-    logging.info("="*60)
+    train_model(model, train_loader, test_loader, optimizer, scheduler, writer, save_model_name, device)
+    
+    logging.info("\n" + "="*80)
+    logging.info(f"LAYER ANALYSIS COMPLETE: Layer {FLAGS.llm_layer}")
+    logging.info("="*80)
+    logging.info(f"✓ Training completed successfully on device: {device.type.upper()}")
+    logging.info("="*80 + "\n")
 
 
 if __name__ == "__main__":

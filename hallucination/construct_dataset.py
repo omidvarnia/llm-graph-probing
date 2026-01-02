@@ -113,6 +113,15 @@ def _build_helm() -> List[Dict]:
 
 
 def main(_):
+    print("\n")
+    print("\n")
+    print("\n\n" + "="*80)
+    print("STEP 1: DATASET CONSTRUCTION & ACTIVATION EXTRACTION")
+    print("="*80)
+    print(f"Device: CPU (Data processing)")
+    print(f"Dataset: {FLAGS.dataset_name}")
+    print("="*80 + "\n")
+    
     if FLAGS.dataset_name == "truthfulqa":
         records = _build_truthfulqa()
     elif FLAGS.dataset_name == "halueval":
@@ -128,12 +137,23 @@ def main(_):
     original_size = len(df)
     df = df.drop_duplicates().reset_index(drop=True)
     deduplicated_size = len(df)
-    print(f"Original size: {original_size}, After deduplication: {deduplicated_size}")
+    
+    print(f"\n{'─'*80}")
+    print(f"Dataset Statistics:")
+    print(f"  Original size: {original_size}")
+    print(f"  After deduplication: {deduplicated_size}")
+    print(f"  Samples removed: {original_size - deduplicated_size}")
+    print(f"{'─'*80}\n")
     
     output_path = os.path.join(FLAGS.output_dir, f"{FLAGS.dataset_name}.csv")
     os.makedirs(FLAGS.output_dir, exist_ok=True)
     df.to_csv(output_path, index=False)
-    print(f"Saved dataset to {output_path}")
+    
+    print("\n" + "="*80)
+    print("STEP 1 COMPLETE: Dataset Construction")
+    print("="*80)
+    print(f"✓ Saved dataset to {output_path}")
+    print("="*80 + "\n\n")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,15 @@
 from absl import app, flags, logging
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, set_start_method
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# Set multiprocessing start method to 'spawn' for CUDA compatibility
+# Must be done before any CUDA operations
+try:
+    set_start_method('spawn', force=True)
+except RuntimeError:
+    pass  # Already set
+
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
@@ -81,7 +89,23 @@ def run_llm(
         os.environ['HIP_VISIBLE_DEVICES'] = str(gpu_id)
         os.environ['ROCR_VISIBLE_DEVICES'] = str(gpu_id)
     
+    logging.info(f"[Producer {rank}] Initializing on GPU {gpu_id}...")
+    
     tokenizer, model = load_tokenizer_and_model(model_name, ckpt_step, gpu_id)
+    
+    # Report device configuration AFTER model is loaded (CUDA is initialized by model loading)
+    import torch
+    if torch.cuda.is_available():
+        try:
+            actual_device = torch.cuda.current_device()
+            device_name = torch.cuda.get_device_name(actual_device)
+            is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+            device_type = "ROCm/HIP" if is_rocm else "CUDA"
+            logging.info(f"[Producer {rank}] Using {device_type} Device {actual_device}: {device_name}")
+        except:
+            pass
+    else:
+        logging.info(f"[Producer {rank}] Using CPU (no GPU available)")
 
     df = pd.read_csv(dataset_filename)
     num_questions = len(df)
@@ -413,9 +437,27 @@ def run_corr(queue, layer_list, p_save_path, worker_idx, sparse=False, network_d
 
 
 def main(_):
-    logging.info("="*60)
-    logging.info("Computing LLM Neural Network Topology")
-    logging.info("="*60)
+    logging.info("\n\n" + "="*80)
+    logging.info("STEP 2: NEURAL NETWORK COMPUTATION (FC MATRICES)")
+    logging.info("="*80)
+    
+    # Report main process device configuration
+    import torch
+    logging.info(f"Main Process Device Configuration:")
+    logging.info(f"  PyTorch CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        is_rocm = hasattr(torch.version, 'hip') and torch.version.hip is not None
+        device_type = "ROCm/HIP" if is_rocm else "CUDA"
+        logging.info(f"  Device Type: {device_type}")
+        logging.info(f"  Available GPUs: {torch.cuda.device_count()}")
+        for i in range(min(torch.cuda.device_count(), len(FLAGS.gpu_id))):
+            logging.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+    else:
+        logging.info(f"  Device Type: CPU (no GPU detected)")
+    
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
+    logging.info(f"Model: {FLAGS.llm_model_name}")
+    logging.info("="*80 + "\n")
     
     # ===== LOAD CONFIGURATION =====
     dataset_filename = main_dir / "data/hallucination" / f"{FLAGS.dataset_name}.csv"
@@ -458,10 +500,10 @@ def main(_):
     logging.info(f"Model: {model_name}")
     logging.info(f"Checkpoint step: {FLAGS.ckpt_step}")
     logging.info(f"Layers: {FLAGS.llm_layer}")
-    logging.info(f"Network density: {FLAGS.network_density}")
+    logging.info(f"Network density: {FLAGS.network_density:.1%}")
     logging.info(f"Sparse mode: {FLAGS.sparse}")
     logging.info(f"Batch size: {FLAGS.batch_size}")
-    logging.info(f"Dataset fraction: {FLAGS.dataset_fraction}")
+    logging.info(f"Dataset fraction: {FLAGS.dataset_fraction:.1%}")
     logging.info(f"Output directory: {dir_name}")
     logging.info(f"Number of GPUs: {len(FLAGS.gpu_id)}")
     logging.info(f"Number of workers: {FLAGS.num_workers}")
@@ -471,16 +513,22 @@ def main(_):
 
     queue = Queue()
 
-    logging.info("\n" + "="*60)
-    logging.info("Starting multiprocessing pipeline...")
-    logging.info("="*60)
+    logging.info("\n" + "="*80)
+    logging.info("GPU ALLOCATION & MULTIPROCESSING CONFIGURATION")
+    logging.info("="*80)
     
     # ===== START PRODUCER PROCESSES =====
     producers = []
     hf_model_name = hf_model_name_map.get(model_name, model_name)
-    logging.info(f"Starting {len(FLAGS.gpu_id)} producer process(es)...")
+    
+    logging.info(f"\n{'─'*80}")
+    logging.info(f"Producer Processes (LLM Forward Pass):")
+    logging.info(f"  Number of producers: {len(FLAGS.gpu_id)}")
     for i, gpu_id in enumerate(FLAGS.gpu_id):
-        logging.info(f"  Producer {i} using GPU {gpu_id}")
+        logging.info(f"  Producer {i} → GPU {gpu_id}")
+    logging.info(f"{'─'*80}\n")
+    
+    for i, gpu_id in enumerate(FLAGS.gpu_id):
         p = Process(
             target=run_llm,
             args=(
@@ -503,9 +551,12 @@ def main(_):
 
     num_workers = FLAGS.num_workers
     consumers = []
-    logging.info(f"\n" + "="*60)
-    logging.info(f"Starting {num_workers} consumer worker(s)...")
-    logging.info("="*60)
+    
+    logging.info(f"{'─'*80}")
+    logging.info(f"Consumer Processes (FC Matrix Computation):")
+    logging.info(f"  Number of consumers: {num_workers}")
+    logging.info(f"  Task: Compute and save functional connectivity matrices")
+    logging.info(f"{'─'*80}\n")
     for worker_idx in range(num_workers):
         p = Process(
             target=run_corr,
@@ -513,27 +564,63 @@ def main(_):
         p.start()
         consumers.append(p)
 
-    logging.info("\n" + "="*60)
-    logging.info("Processing dataset...")
-    logging.info("="*60)
-    logging.info(f"Waiting for {len(producers)} producer(s) to complete...")
+
+    logging.info("\n" + "="*80)
+    logging.info("PROCESSING PHASE: PRODUCERS & CONSUMERS")
+    logging.info("="*80)
+    logging.info(f"Waiting for {len(producers)} producer(s) to complete forward passes...")
+    
+    producer_errors = []
     for i, producer in enumerate(producers):
         producer.join()
-        logging.info(f"  ✓ Producer {i} terminated")
-    logging.info("✓ All producers completed")
+        if producer.exitcode != 0:
+            error_msg = f"Producer {i} failed with exit code {producer.exitcode}"
+            logging.error(f"  ✗ {error_msg}")
+            producer_errors.append(error_msg)
+        else:
+            logging.info(f"  ✓ Producer {i} completed (GPU)")
     
-    logging.info(f"Sending STOP signal to {num_workers} consumer(s) and waiting for queue drain...")
+    if producer_errors:
+        logging.error("✗ One or more producers failed. Stopping pipeline.")
+        logging.error("\n".join(producer_errors))
+        # Send stop signals to consumers before exiting
+        for _ in range(num_workers):
+            queue.put("STOP")
+        for consumer in consumers:
+            consumer.join()
+        import sys
+        sys.exit(1)
+    
+    logging.info("✓ All producers completed successfully")
+    
+    logging.info(f"\nSending completion signal to {num_workers} consumer(s)...")
     for _ in range(num_workers):
         queue.put("STOP")
-    logging.info(f"Waiting for {num_workers} consumer(s) to complete processing the queue...")
+    
+    logging.info(f"Waiting for {num_workers} consumer(s) to complete FC computation...")
+    consumer_errors = []
     for i, consumer in enumerate(consumers):
         consumer.join()
-        logging.info(f"  ✓ Consumer {i} terminated")
-    logging.info("✓ All consumers completed")
+        if consumer.exitcode != 0:
+            error_msg = f"Consumer {i} failed with exit code {consumer.exitcode}"
+            logging.error(f"  ✗ {error_msg}")
+            consumer_errors.append(error_msg)
+        else:
+            logging.info(f"  ✓ Consumer {i} completed (CPU)")
     
-    logging.info("\n" + "="*60)
-    logging.info("✓ Neural topology computation completed successfully")
-    logging.info("="*60)
+    if consumer_errors:
+        logging.error("✗ One or more consumers failed. Stopping pipeline.")
+        logging.error("\n".join(consumer_errors))
+        import sys
+        sys.exit(1)
+    
+    logging.info("✓ All consumers completed successfully")
+    
+    logging.info("\n" + "="*80)
+    logging.info("STEP 2 COMPLETE: Neural Topology Computation")
+    logging.info("="*80)
+    logging.info("✓ FC matrices computed and saved successfully")
+    logging.info("="*80 + "\n\n")
 
 
 if __name__ == "__main__":

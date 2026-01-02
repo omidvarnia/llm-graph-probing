@@ -44,7 +44,6 @@ flags.DEFINE_integer("gpu_id", 0, "The GPU ID.")
 flags.DEFINE_integer("seed", 42, "The random seed.")
 flags.DEFINE_float("label_smoothing", 0.1, "Label smoothing factor.")
 flags.DEFINE_float("gradient_clip", 1.0, "Gradient clipping value.")
-flags.DEFINE_integer("warmup_epochs", 5, "Number of warmup epochs.")
 
 FLAGS = flags.FLAGS
 main_dir = Path(os.environ.get('MAIN_DIR', '.')) if 'MAIN_DIR' in os.environ else Path('.')
@@ -84,7 +83,9 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
     epochs_no_improve = 0
     
     accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-    torch.cuda.empty_cache()
+    # Only empty GPU cache if using CUDA
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     logging.info(f"Initial Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
     
     for epoch in range(FLAGS.num_epochs):
@@ -123,10 +124,6 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
             total_loss += loss.item() * batch.num_graphs
             num_graphs += batch.num_graphs
         
-        # Update learning rate
-        if epoch < FLAGS.warmup_epochs:
-            warmup_scheduler.step()
-        
         if num_graphs == 0:
             avg_loss = float('nan')
         else:
@@ -137,11 +134,15 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
         logging.info(f"[Epoch {epoch + 1}] Train Loss: {avg_loss:.4f}, LR: {current_lr:.6f}")
         writer.add_scalar("train/loss", avg_loss, epoch + 1)
         writer.add_scalar("train/lr", current_lr, epoch + 1)
-        torch.cuda.empty_cache()
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         
         # Evaluate
         accuracy, precision, recall, f1, cm = test_fn(model, test_data_loader, device, num_layers=FLAGS.num_layers)
-        torch.cuda.empty_cache()
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
         logging.info(f"[Epoch {epoch + 1}] Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
         logging.info(f"[Epoch {epoch + 1}] Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
@@ -162,11 +163,10 @@ def train_activation_probe(model, train_data_loader, test_data_loader, optimizer
             torch.save(model.state_dict(), save_model_name)
             epochs_no_improve = 0
         else:
-            if epoch >= FLAGS.warmup_epochs:
-                epochs_no_improve += 1
-                if epochs_no_improve >= FLAGS.early_stop_patience:
-                    logging.info(f"Early stopping at epoch {epoch + 1}")
-                    break
+            epochs_no_improve += 1
+            if epochs_no_improve >= FLAGS.early_stop_patience:
+                logging.info(f"Early stopping at epoch {epoch + 1}")
+                break
     
     logging.info(f"Best Epoch: {best_metrics['epoch']}")
     for metric in ["accuracy", "precision", "recall", "f1"]:
@@ -185,6 +185,10 @@ def main(_):
     
     # Device
     device = select_device(FLAGS.gpu_id)
+    
+    # Log PyTorch Geometric backend device
+    from utils.probing_model import PYG_DEVICE_INFO
+    logging.info(f"PyTorch Geometric Backend: {PYG_DEVICE_INFO}")
     
     # Sanitize model name
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
@@ -235,9 +239,6 @@ def main(_):
     optimizer = torch.optim.Adam(model.parameters(), lr=FLAGS.lr, weight_decay=FLAGS.weight_decay)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='max', factor=0.1, patience=5, verbose=True
-    )
-    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
-        optimizer, start_factor=0.1, total_iters=FLAGS.warmup_epochs
     )
     
     # TensorBoard

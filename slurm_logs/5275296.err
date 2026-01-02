@@ -1,0 +1,6 @@
+/u/aomidvarnia/.bashrc: line 32: bind: warning: line editing not enabled
+/u/aomidvarnia/.bashrc: line 33: bind: warning: line editing not enabled
+amdgpu.ids: No such file or directory
+WARNING:root:⚠ SANITY CHECK: No sparse network files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/gpt2/layer_5
+WARNING:root:Could not extract confusion matrix from eval log for layer 9
+WARNING:root:Could not extract confusion matrix from eval log for layer 10

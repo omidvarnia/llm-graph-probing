@@ -48,31 +48,46 @@ class ConstantBaseline(torch.nn.Module):
 
 
 def main(_):
-    logging.info("="*60)
-    logging.info("Evaluating Hallucination Detection Probes")
-    logging.info("="*60)
+    logging.info("\n\n" + "="*80)
+    logging.info("STEP 4: HALLUCINATION DETECTION PROBE EVALUATION")
+    logging.info("="*80)
     
     device = select_device(FLAGS.gpu_id)
+    logging.info(f"\n{'─'*80}")
+    logging.info(f"Device Configuration:")
+    logging.info(f"  Device Type: {device.type.upper()}")
+    logging.info(f"  Device Index: {device.index if device.index is not None else 0}")
+    logging.info(f"  PyTorch CUDA Available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        logging.info(f"  GPU Name: {torch.cuda.get_device_name(FLAGS.gpu_id)}")
+    
+    # Log PyTorch Geometric backend device
+    from utils.probing_model import PYG_DEVICE_INFO
+    logging.info(f"  PyTorch Geometric Backend: {PYG_DEVICE_INFO}")
+    
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
+    logging.info(f"Model: {FLAGS.llm_model_name}")
+    logging.info("="*80 + "\n")
 
     if FLAGS.use_constant_baseline:
         assert FLAGS.num_layers == 0, "Constant baseline requires num_layers=0."
         logging.info(f"Using constant baseline with label={FLAGS.baseline_label}")
 
-    sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
     if FLAGS.ckpt_step == -1:
-        model_dir = sanitized_model_name
+        model_dir = FLAGS.llm_model_name
     else:
-        model_dir = f"{sanitized_model_name}_step{FLAGS.ckpt_step}"
+        model_dir = f"{FLAGS.llm_model_name}_step{FLAGS.ckpt_step}"
     save_model_name = f"hallucination/{FLAGS.dataset_name}/{model_dir}"
     
-    logging.info(f"Dataset: {FLAGS.dataset_name}")
-    logging.info(f"Model: {FLAGS.llm_model_name}")
-    logging.info(f"Layer: {FLAGS.llm_layer}")
-    logging.info(f"Probe input: {FLAGS.probe_input}")
-    logging.info(f"Network density: {FLAGS.density}")
-    logging.info(f"Architecture: {FLAGS.num_layers} layers, {FLAGS.hidden_channels} channels")
-
-    logging.info("\nLoading data...")
+    logging.info(f"\n{'─'*80}")
+    logging.info(f"Layer Analysis Configuration:")
+    logging.info(f"  Layer ID: {FLAGS.llm_layer}")
+    logging.info(f"  Dataset: {FLAGS.dataset_name}")
+    logging.info(f"  Model: {FLAGS.llm_model_name}")
+    logging.info(f"  Probe Input: {FLAGS.probe_input}")
+    logging.info(f"  Network Density: {FLAGS.density:.1%}")
+    logging.info(f"  Architecture: {FLAGS.num_layers} layers, {FLAGS.hidden_channels} channels")
+    logging.info(f"{'─'*80}\n")
     if FLAGS.num_layers > 0:
         logging.info("Using graph-based (GCN) probe")
         _, test_loader = get_truthfulqa_dataloader(
@@ -132,26 +147,46 @@ def main(_):
     if not FLAGS.use_constant_baseline:
         density_tag = f"{int(round(FLAGS.density * 100)):02d}"
         model_save_path = main_dir / f"saves/{save_model_name}/layer_{FLAGS.llm_layer}" / f"best_model_density-{density_tag}_dim-{FLAGS.hidden_channels}_hop-{FLAGS.num_layers}_input-{FLAGS.probe_input}.pth"
-        logging.info(f"\nLoading model from: {model_save_path}")
+        logging.info(f"Loading model from: {model_save_path}")
         model.load_state_dict(torch.load(model_save_path, map_location=device))
 
     # ===== EVALUATION =====
-    logging.info("\n" + "="*60)
-    logging.info("Evaluating...")
-    logging.info("="*60)
-    accuracy, precision, recall, f1, cm = test_fn(model, test_loader, device, num_layers=FLAGS.num_layers)
-    torch.cuda.empty_cache()
+    logging.info("\n" + "="*80)
+    logging.info("LAYER ANALYSIS: EVALUATION PHASE")
+    logging.info("="*80)
+    logging.info(f"Layer {FLAGS.llm_layer} - Evaluating on {len(test_loader.dataset)} samples")
+    logging.info("="*80 + "\n")
     
-    logging.info("\n" + "="*60)
-    logging.info("Evaluation Results")
-    logging.info("="*60)
-    logging.info(f"Test Accuracy: {accuracy:.4f}")
-    logging.info(f"Precision: {precision:.4f}")
-    logging.info(f"Recall: {recall:.4f}")
-    logging.info(f"F1 Score: {f1:.4f}")
+    accuracy, precision, recall, f1, cm = test_fn(model, test_loader, device, num_layers=FLAGS.num_layers)
+    # Only empty GPU cache if using CUDA
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+    
+    logging.info("\n" + "="*80)
+    logging.info(f"LAYER {FLAGS.llm_layer} - EVALUATION RESULTS")
+    logging.info("="*80)
+    logging.info(f"\nClassification Metrics:")
+    logging.info(f"  Test Accuracy:  {accuracy:.4f}")
+    logging.info(f"  Precision:      {precision:.4f}")
+    logging.info(f"  Recall:         {recall:.4f}")
+    logging.info(f"  F1 Score:       {f1:.4f}")
+    
     tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
-    logging.info(f"Confusion Matrix (TN={tn} (true negatives), FP={fp} (false positives), FN={fn} (false negatives), TP={tp} (true positives)):\n{cm}")
-    logging.info("="*60)
+    logging.info(f"\nConfusion Matrix:")
+    logging.info(f"  True Negatives:  {tn}")
+    logging.info(f"  False Positives: {fp}")
+    logging.info(f"  False Negatives: {fn}")
+    logging.info(f"  True Positives:  {tp}")
+    logging.info(f"\nConfusion Matrix (raw):\n{cm}")
+    logging.info("="*80)
+    logging.info(f"✓ Evaluation completed on device: {device.type.upper()}")
+    logging.info("="*80 + "\n")
+    
+    logging.info("\n" + "="*80)
+    logging.info("STEP 4 COMPLETE: Probe Evaluation")
+    logging.info("="*80)
+    logging.info("✓ Probe evaluation completed successfully")
+    logging.info("="*80 + "\n\n")
 
 
 if __name__ == "__main__":

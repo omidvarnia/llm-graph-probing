@@ -69,7 +69,6 @@ def export_shell_vars(section: dict, pipeline: str):
             'early_stop_patience': 'EARLY_STOP_PATIENCE',
             'label_smoothing': 'LABEL_SMOOTHING',
             'gradient_clip': 'GRADIENT_CLIP',
-            'warmup_epochs': 'WARMUP_EPOCHS',
             'dataset_fraction': 'DATASET_FRACTION',
         }
     else:  # neuropathology

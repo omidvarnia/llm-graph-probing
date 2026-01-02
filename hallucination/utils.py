@@ -5,40 +5,57 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 from utils.constants import BASE_MODELS, QWEN_CHAT_MODELS
 
 
-def select_device(gpu_id: int):
-    """Select CUDA/ROCm device. Fail hard if GPU not available."""
-    if not torch.cuda.is_available():
-        error_msg = (
-            "FATAL ERROR: CUDA/ROCm not available at device initialization\n"
-            "  - Check environment variables: HIP_VISIBLE_DEVICES, ROCR_VISIBLE_DEVICES, CUDA_VISIBLE_DEVICES\n"
-            "  - Check SLURM allocation: --gres=gpu:N\n"
-            "  - Check module loads: module load rocm/7.0\n"
-        )
-        logging.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    device = torch.device(f"cuda:{gpu_id}")
-    gpu_name = torch.cuda.get_device_name(gpu_id)
-    logging.info(f"✓ Using device: {device} (GPU: {gpu_name})")
-
-    # Minimal GPU op sanity check (avoids torch_scatter dependency)
-    try:
-        idx = torch.tensor([0, 0, 1, 1], device=device)
-        x = torch.randn(4, 8, device=device)
-        out = torch.zeros(2, 8, device=device)
-        out.index_add_(0, idx, x)
-        _ = (out @ out.T).sum()  # matmul sanity
-        logging.info("✓ GPU index_add/matmul sanity check passed")
-    except RuntimeError as exc:
-        error_msg = (
-            f"FATAL ERROR: Basic GPU ops failed (index_add/matmul)\n"
-            f"  - Error: {type(exc).__name__}: {exc}\n"
-            f"  - Ensure ROCm kernels are available and PyTorch is correctly installed"
-        )
-        logging.error(error_msg)
-        raise RuntimeError(error_msg)
-
-    return device
+def select_device(gpu_id: int = 0):
+    """
+    Intelligently select device: ROCm → CUDA → CPU
+    
+    Priority:
+    1. ROCm (AMD GPUs) - check HIP_VISIBLE_DEVICES
+    2. CUDA (NVIDIA GPUs) - check CUDA_VISIBLE_DEVICES  
+    3. CPU fallback (no GPU available)
+    
+    Args:
+        gpu_id: GPU index to use (default: 0)
+    
+    Returns:
+        torch.device: Selected device
+    """
+    if torch.cuda.is_available():
+        # Detect device type
+        device_name = torch.cuda.get_device_name(gpu_id)
+        is_amd = "AMD" in device_name or "MI" in device_name or "Radeon" in device_name
+        is_rocm = "HIP" in torch.version.hip if hasattr(torch.version, 'hip') else False
+        
+        try:
+            device = torch.device(f"cuda:{gpu_id}")
+            
+            # Sanity check: test basic GPU operations
+            try:
+                idx = torch.tensor([0, 0, 1, 1], device=device)
+                x = torch.randn(4, 8, device=device)
+                out = torch.zeros(2, 8, device=device)
+                out.index_add_(0, idx, x)
+                _ = (out @ out.T).sum()  # matmul sanity check
+            except RuntimeError as e:
+                logging.warning(f"GPU sanity check failed: {e}. Falling back to CPU.")
+                device = torch.device("cpu")
+                logging.info(f"Using device: CPU (fallback after GPU sanity check failed)")
+                return device
+            
+            device_type = "ROCm/HIP" if is_rocm else "CUDA"
+            logging.info(f"✓ Using device: {device} (GPU: {device_name}, Type: {device_type})")
+            return device
+            
+        except RuntimeError as e:
+            logging.warning(f"Failed to use CUDA device {gpu_id}: {e}. Falling back to CPU.")
+            device = torch.device("cpu")
+            logging.info(f"Using device: CPU (fallback)")
+            return device
+    else:
+        logging.warning("CUDA/ROCm not available. Using CPU (this will be slow).")
+        device = torch.device("cpu")
+        logging.info(f"Using device: CPU")
+        return device
 
 
 def format_prompt(questions, answers, model_name, tokenizer):

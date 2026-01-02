@@ -39,7 +39,9 @@ FLAGS = flags.FLAGS
 
 def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler, writer, save_model_name, device):
     accuracy, precision, recall, f1, cm = test_fn_ccs(model, test_data_loader, device)
-    torch.cuda.empty_cache()
+    # Only empty GPU cache if using CUDA
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
     logging.info(f"Initial Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
     for metric, value in zip(["accuracy", "precision", "recall", "f1"], [accuracy, precision, recall, f1]):
         writer.add_scalar(f"test/{metric}", value, 0)
@@ -85,10 +87,14 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
         avg_loss = total_loss / num_graphs
         logging.info(f"Epoch {epoch + 1}, Loss: {avg_loss:.4f}")
         writer.add_scalar("train/loss", avg_loss, epoch + 1)
-        torch.cuda.empty_cache()
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
         accuracy, precision, recall, f1, cm = test_fn_ccs(model, test_data_loader, device)
-        torch.cuda.empty_cache()
+        # Only empty GPU cache if using CUDA
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
         tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
         logging.info(f"Test Accuracy: {accuracy:.4f}, Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
         logging.info(f"Confusion Matrix (TN={tn}, FP={fp}, FN={fn}, TP={tp}):\n{cm}")
@@ -118,7 +124,13 @@ def train_model(model, train_data_loader, test_data_loader, optimizer, scheduler
  
 
 def main(_):
-    device = torch.device(f"cuda:{FLAGS.gpu_id}")
+    from hallucination.utils import select_device
+    device = select_device(FLAGS.gpu_id)
+    
+    # Log PyTorch Geometric backend device
+    from utils.probing_model import PYG_DEVICE_INFO
+    logging.info(f"PyTorch Geometric Backend: {PYG_DEVICE_INFO}")
+    
     assert FLAGS.num_layers <= 0, "CCS probing only supports MLP classifier."
 
     sanitized_model_name = FLAGS.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')

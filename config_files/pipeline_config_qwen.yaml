@@ -70,8 +70,7 @@ hallucination:
   learning_rate: 0.001                  # Probe optimizer learning rate (reference uses 0.001)
   num_epochs: 100                       # Max probe training epochs (reference uses 10, but we use 100 with early stopping)
   label_smoothing: 0.1                  # Label smoothing factor for regularization (0.0-1.0)
-  gradient_clip: 1                    # Max gradient norm for clipping (prevents exploding gradients)
-  warmup_epochs: 5                      # Number of warmup epochs for learning rate scheduler
+  gradient_clip: 1.0                    # Max gradient norm for clipping (prevents exploding gradients)
 
 neuropathology:
   disease_pattern: epilepsy_like        # Disease preset (epilepsy_like, dementia_like, autism_like)

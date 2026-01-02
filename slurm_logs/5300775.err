@@ -1,0 +1,333 @@
+/u/aomidvarnia/.bashrc: line 32: bind: warning: line editing not enabled
+/u/aomidvarnia/.bashrc: line 33: bind: warning: line editing not enabled
+amdgpu.ids: No such file or directory
+2026-01-01 17:19:17,579 - INFO - ================================================================================
+2026-01-01 17:19:17,579 - INFO - HALLUCINATION DETECTION PIPELINE - DEVICE CONFIGURATION
+2026-01-01 17:19:17,579 - INFO - ================================================================================
+amdgpu.ids: No such file or directory
+2026-01-01 17:19:19,394 - INFO - ✓ Device Type: ROCm/HIP
+2026-01-01 17:19:19,394 - INFO -   AMD GPU: AMD Radeon Graphics
+2026-01-01 17:19:19,394 - INFO -   ROCm Version: 6.1.40091-a8dbc0c19
+2026-01-01 17:19:19,394 - INFO -   Selected GPU ID: 0
+2026-01-01 17:19:19,394 - INFO -   Total Available GPUs: 1
+2026-01-01 17:19:19,394 - INFO - 
+GPU Environment Variables:
+2026-01-01 17:19:19,394 - INFO -   HIP_VISIBLE_DEVICES: 0
+2026-01-01 17:19:19,394 - INFO -   ROCR_VISIBLE_DEVICES: 0
+2026-01-01 17:19:19,394 - INFO -   CUDA_VISIBLE_DEVICES: 0
+2026-01-01 17:19:19,394 - INFO - ================================================================================
+
+2026-01-01 17:19:19,394 - INFO - Starting Graph Probing Analysis
+2026-01-01 17:19:22,121 - INFO - Auto-detected 12 layers in model gpt2
+2026-01-01 17:19:22,121 - INFO - Processing all layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+2026-01-01 17:19:22,121 - INFO - 
+================================================================================
+2026-01-01 17:19:22,121 - INFO - CLEANUP: Removing existing results
+2026-01-01 17:19:22,121 - INFO - ================================================================================
+2026-01-01 17:19:22,132 - INFO - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2
+2026-01-01 17:21:25,461 - INFO - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
+2026-01-01 17:21:25,464 - INFO -   (not found, skipping): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2
+2026-01-01 17:21:25,464 - INFO -   (not found, skipping): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2
+2026-01-01 17:21:25,465 - INFO - ================================================================================
+
+2026-01-01 17:21:25,467 - INFO - 
+============================================================
+2026-01-01 17:21:25,467 - INFO - STEP 1: Constructing Dataset
+2026-01-01 17:21:25,467 - INFO - ============================================================
+2026-01-01 17:21:25,467 - INFO - Dataset: truthfulqa
+2026-01-01 17:21:25,467 - INFO - Model: gpt2 (sanitized: gpt2)
+2026-01-01 17:21:25,467 - INFO - Checkpoint step: -1
+2026-01-01 17:21:25,467 - INFO - Batch size: 16
+2026-01-01 17:21:25,467 - INFO - Using Python: /ptmp/aomidvarnia/uv_envs/llm_graph/bin/python
+2026-01-01 17:21:25,467 - INFO - Executing construct_dataset.py...
+2026-01-01 17:21:30,675 - INFO - ✓ Dataset constructed successfully
+2026-01-01 17:21:30,675 - INFO - ✓ SANITY CHECK: Dataset file exists at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa.csv
+2026-01-01 17:21:30,683 - INFO - ✓ SANITY CHECK: Dataset loaded successfully
+2026-01-01 17:21:30,684 - INFO -   - Total rows: 5915
+2026-01-01 17:21:30,684 - INFO -   - Columns: ['question_id', 'question', 'answer', 'label']
+2026-01-01 17:21:30,684 - INFO - ✓ SANITY CHECK: All required columns present: ['label', 'answer']
+2026-01-01 17:21:30,684 - INFO - ✓ SANITY CHECK: Label distribution: {0: 3317, 1: 2598}
+2026-01-01 17:21:30,685 - INFO - ✓ SANITY CHECK: Both classes present
+2026-01-01 17:21:30,892 - INFO - ✓ Saved label distribution plot to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2/layer_0/dataset_label_distribution.png
+2026-01-01 17:21:30,894 - INFO - ✓ Saved dataset head (20 rows) to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2/layer_0/dataset_head.csv
+2026-01-01 17:21:30,894 - INFO - ✓ Dataset is ready for processing
+2026-01-01 17:21:30,894 - INFO - 
+
+2026-01-01 17:21:30,894 - INFO - 
+
+2026-01-01 17:21:30,894 - INFO - ============================================================
+2026-01-01 17:21:30,894 - INFO - STEP 2: Generating Neural Topology (Network Graph)
+2026-01-01 17:21:30,894 - INFO - ============================================================
+2026-01-01 17:21:30,894 - INFO - Layer IDs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+2026-01-01 17:21:30,894 - INFO - Network density: 0.05
+2026-01-01 17:21:30,894 - INFO - Sparse mode: True
+2026-01-01 17:21:30,894 - INFO - ✓ SANITY CHECK: network_density=0.05 is valid
+2026-01-01 17:21:30,894 - INFO - ✓ SANITY CHECK: 12 layer(s) to process
+2026-01-01 17:21:30,894 - INFO - Executing compute_llm_network.py...
+2026-01-01 18:10:47,932 - INFO - ✓ Network computation completed
+2026-01-01 18:10:50,616 - INFO - ✓ SANITY CHECK: Found 70980 sparse network file(s) in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
+2026-01-01 18:10:50,616 - INFO -   Example 1: 705/layer_9_sparse_05_edge_index.npy
+2026-01-01 18:10:50,617 - INFO -   Example 2: 705/layer_1_sparse_05_edge_index.npy
+2026-01-01 18:10:50,617 - INFO -   Example 3: 705/layer_4_sparse_05_edge_index.npy
+2026-01-01 18:10:50,949 - INFO - ✓ Saved FC matrix before threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2/layer_0/fc_before_threshold.png
+2026-01-01 18:10:51,100 - INFO - ✓ Saved FC matrix after threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2/layer_0/fc_after_threshold.png
+2026-01-01 18:10:51,103 - INFO -   Threshold: 0.5649, Edges before: 589824, after: 28724
+2026-01-01 18:10:51,103 - INFO - 
+============================================================
+2026-01-01 18:10:51,103 - INFO - STEP 3: Training Graph Neural Network Probes
+2026-01-01 18:10:51,103 - INFO - ============================================================
+2026-01-01 18:10:51,103 - INFO - Probe input: corr
+2026-01-01 18:10:51,103 - INFO - Density: 0.05
+2026-01-01 18:10:51,103 - INFO - Num channels: 32
+2026-01-01 18:10:51,103 - INFO - Num layers: 3
+2026-01-01 18:10:51,103 - INFO - Learning rate: 0.001
+2026-01-01 18:10:51,103 - INFO - Batch size: 16
+2026-01-01 18:10:51,103 - INFO - Eval batch size: 32
+2026-01-01 18:10:51,103 - INFO - Num epochs: 100
+2026-01-01 18:10:51,103 - INFO - Early stop patience: 20
+2026-01-01 18:10:51,103 - INFO - Label smoothing: 0.1
+2026-01-01 18:10:51,103 - INFO - Gradient clipping: 1.0
+2026-01-01 18:10:51,103 - INFO - ✓ SANITY CHECK: num_epochs=100 is valid
+2026-01-01 18:10:51,103 - INFO - ✓ SANITY CHECK: learning_rate=0.001 is valid
+2026-01-01 18:10:51,103 - INFO - ✓ SANITY CHECK: label_smoothing=0.1 is valid
+2026-01-01 18:10:51,103 - INFO - 
+--- Training probe for layer 0 ---
+2026-01-01 18:10:51,103 - INFO - Executing train.py...
+2026-01-01 18:10:51,103 - INFO - This may take a while...
+2026-01-01 18:23:06,339 - INFO - ✓ Probe trained successfully for layer 0
+2026-01-01 18:23:06,339 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_0/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 18:23:06,339 - INFO - Trained models are ready for evaluation
+2026-01-01 18:23:06,339 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_0
+2026-01-01 18:23:06,538 - INFO - 
+--- Training probe for layer 1 ---
+2026-01-01 18:23:06,540 - INFO - Executing train.py...
+2026-01-01 18:23:06,540 - INFO - This may take a while...
+2026-01-01 18:35:05,656 - INFO - ✓ Probe trained successfully for layer 1
+2026-01-01 18:35:05,657 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_1/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 18:35:05,657 - INFO - Trained models are ready for evaluation
+2026-01-01 18:35:05,657 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_1
+2026-01-01 18:35:05,831 - INFO - 
+--- Training probe for layer 2 ---
+2026-01-01 18:35:05,831 - INFO - Executing train.py...
+2026-01-01 18:35:05,831 - INFO - This may take a while...
+2026-01-01 18:46:55,427 - INFO - ✓ Probe trained successfully for layer 2
+2026-01-01 18:46:55,427 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_2/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 18:46:55,428 - INFO - Trained models are ready for evaluation
+2026-01-01 18:46:55,428 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_2
+2026-01-01 18:46:55,614 - INFO - 
+--- Training probe for layer 3 ---
+2026-01-01 18:46:55,615 - INFO - Executing train.py...
+2026-01-01 18:46:55,615 - INFO - This may take a while...
+2026-01-01 19:08:36,130 - INFO - ✓ Probe trained successfully for layer 3
+2026-01-01 19:08:36,131 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_3/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 19:08:36,131 - INFO - Trained models are ready for evaluation
+2026-01-01 19:08:36,131 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_3
+2026-01-01 19:08:36,311 - INFO - 
+--- Training probe for layer 4 ---
+2026-01-01 19:08:36,313 - INFO - Executing train.py...
+2026-01-01 19:08:36,313 - INFO - This may take a while...
+2026-01-01 19:20:07,419 - INFO - ✓ Probe trained successfully for layer 4
+2026-01-01 19:20:07,419 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_4/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 19:20:07,419 - INFO - Trained models are ready for evaluation
+2026-01-01 19:20:07,419 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_4
+2026-01-01 19:20:07,599 - INFO - 
+--- Training probe for layer 5 ---
+2026-01-01 19:20:07,600 - INFO - Executing train.py...
+2026-01-01 19:20:07,600 - INFO - This may take a while...
+2026-01-01 19:30:56,020 - INFO - ✓ Probe trained successfully for layer 5
+2026-01-01 19:30:56,020 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_5/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 19:30:56,020 - INFO - Trained models are ready for evaluation
+2026-01-01 19:30:56,020 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_5
+2026-01-01 19:30:56,207 - INFO - 
+--- Training probe for layer 6 ---
+2026-01-01 19:30:56,208 - INFO - Executing train.py...
+2026-01-01 19:30:56,208 - INFO - This may take a while...
+2026-01-01 19:52:12,381 - INFO - ✓ Probe trained successfully for layer 6
+2026-01-01 19:52:12,381 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_6/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 19:52:12,381 - INFO - Trained models are ready for evaluation
+2026-01-01 19:52:12,381 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_6
+2026-01-01 19:52:12,567 - INFO - 
+--- Training probe for layer 7 ---
+2026-01-01 19:52:12,568 - INFO - Executing train.py...
+2026-01-01 19:52:12,569 - INFO - This may take a while...
+2026-01-01 20:13:27,173 - INFO - ✓ Probe trained successfully for layer 7
+2026-01-01 20:13:27,175 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_7/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 20:13:27,175 - INFO - Trained models are ready for evaluation
+2026-01-01 20:13:27,175 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_7
+2026-01-01 20:13:27,367 - INFO - 
+--- Training probe for layer 8 ---
+2026-01-01 20:13:27,369 - INFO - Executing train.py...
+2026-01-01 20:13:27,369 - INFO - This may take a while...
+2026-01-01 20:32:56,538 - INFO - ✓ Probe trained successfully for layer 8
+2026-01-01 20:32:56,538 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_8/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 20:32:56,538 - INFO - Trained models are ready for evaluation
+2026-01-01 20:32:56,538 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_8
+2026-01-01 20:32:56,751 - INFO - 
+--- Training probe for layer 9 ---
+2026-01-01 20:32:56,753 - INFO - Executing train.py...
+2026-01-01 20:32:56,753 - INFO - This may take a while...
+2026-01-01 20:45:25,184 - INFO - ✓ Probe trained successfully for layer 9
+2026-01-01 20:45:25,184 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_9/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 20:45:25,184 - INFO - Trained models are ready for evaluation
+2026-01-01 20:45:25,184 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_9
+2026-01-01 20:45:25,365 - INFO - 
+--- Training probe for layer 10 ---
+2026-01-01 20:45:25,365 - INFO - Executing train.py...
+2026-01-01 20:45:25,365 - INFO - This may take a while...
+2026-01-01 20:57:55,615 - INFO - ✓ Probe trained successfully for layer 10
+2026-01-01 20:57:55,617 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_10/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 20:57:55,617 - INFO - Trained models are ready for evaluation
+2026-01-01 20:57:55,617 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_10
+2026-01-01 20:57:55,804 - INFO - 
+--- Training probe for layer 11 ---
+2026-01-01 20:57:55,806 - INFO - Executing train.py...
+2026-01-01 20:57:55,806 - INFO - This may take a while...
+2026-01-01 21:18:18,538 - INFO - ✓ Probe trained successfully for layer 11
+2026-01-01 21:18:18,538 - INFO - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_11/best_model_density-05_dim-32_hop-3_input-corr.pth (size: 0.12 MB)
+2026-01-01 21:18:18,538 - INFO - Trained models are ready for evaluation
+2026-01-01 21:18:18,538 - INFO - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_11
+2026-01-01 21:18:18,735 - INFO - 
+============================================================
+2026-01-01 21:18:18,735 - INFO - STEP 4: Evaluating Trained Probes
+2026-01-01 21:18:18,735 - INFO - ============================================================
+2026-01-01 21:18:18,735 - INFO - Network density: 0.05
+2026-01-01 21:18:18,735 - INFO - Layers to evaluate: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+2026-01-01 21:18:18,735 - INFO - 
+--- Evaluating probe for layer 0 ---
+2026-01-01 21:18:18,735 - INFO - Executing eval.py...
+2026-01-01 21:18:18,736 - INFO - Computing evaluation metrics...
+2026-01-01 21:23:16,534 - INFO - ✓ Evaluation completed successfully for layer 0
+2026-01-01 21:23:16,536 - INFO -   Test Accuracy: 0.5469 (54.69%)
+2026-01-01 21:23:16,536 - INFO -   Precision: 0.4912
+2026-01-01 21:23:16,536 - INFO -   Recall: 0.0523
+2026-01-01 21:23:16,536 - INFO -   F1 Score: 0.0946
+2026-01-01 21:23:16,536 - INFO -   Confusion Matrix: TN=619, FP=29, FN=507, TP=28
+2026-01-01 21:23:16,536 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:23:16,536 - INFO - 
+--- Evaluating probe for layer 1 ---
+2026-01-01 21:23:16,536 - INFO - Executing eval.py...
+2026-01-01 21:23:16,536 - INFO - Computing evaluation metrics...
+2026-01-01 21:28:08,279 - INFO - ✓ Evaluation completed successfully for layer 1
+2026-01-01 21:28:08,280 - INFO -   Test Accuracy: 0.5478 (54.78%)
+2026-01-01 21:28:08,280 - INFO -   Precision: 0.0000
+2026-01-01 21:28:08,280 - INFO -   Recall: 0.0000
+2026-01-01 21:28:08,280 - INFO -   F1 Score: 0.0000
+2026-01-01 21:28:08,280 - INFO -   Confusion Matrix: TN=648, FP=0, FN=535, TP=0
+2026-01-01 21:28:08,280 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:28:08,280 - INFO - 
+--- Evaluating probe for layer 2 ---
+2026-01-01 21:28:08,280 - INFO - Executing eval.py...
+2026-01-01 21:28:08,280 - INFO - Computing evaluation metrics...
+2026-01-01 21:32:59,692 - INFO - ✓ Evaluation completed successfully for layer 2
+2026-01-01 21:32:59,693 - INFO -   Test Accuracy: 0.5495 (54.95%)
+2026-01-01 21:32:59,693 - INFO -   Precision: 0.5500
+2026-01-01 21:32:59,693 - INFO -   Recall: 0.0206
+2026-01-01 21:32:59,693 - INFO -   F1 Score: 0.0396
+2026-01-01 21:32:59,693 - INFO -   Confusion Matrix: TN=639, FP=9, FN=524, TP=11
+2026-01-01 21:32:59,693 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:32:59,693 - INFO - 
+--- Evaluating probe for layer 3 ---
+2026-01-01 21:32:59,693 - INFO - Executing eval.py...
+2026-01-01 21:32:59,693 - INFO - Computing evaluation metrics...
+2026-01-01 21:37:50,058 - INFO - ✓ Evaluation completed successfully for layer 3
+2026-01-01 21:37:50,059 - INFO -   Test Accuracy: 0.6636 (66.36%)
+2026-01-01 21:37:50,059 - INFO -   Precision: 0.6378
+2026-01-01 21:37:50,059 - INFO -   Recall: 0.5925
+2026-01-01 21:37:50,059 - INFO -   F1 Score: 0.6143
+2026-01-01 21:37:50,059 - INFO -   Confusion Matrix: TN=468, FP=180, FN=218, TP=317
+2026-01-01 21:37:50,059 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:37:50,059 - INFO - 
+--- Evaluating probe for layer 4 ---
+2026-01-01 21:37:50,059 - INFO - Executing eval.py...
+2026-01-01 21:37:50,059 - INFO - Computing evaluation metrics...
+2026-01-01 21:42:43,867 - INFO - ✓ Evaluation completed successfully for layer 4
+2026-01-01 21:42:43,868 - INFO -   Test Accuracy: 0.5486 (54.86%)
+2026-01-01 21:42:43,868 - INFO -   Precision: 1.0000
+2026-01-01 21:42:43,868 - INFO -   Recall: 0.0019
+2026-01-01 21:42:43,868 - INFO -   F1 Score: 0.0037
+2026-01-01 21:42:43,868 - INFO -   Confusion Matrix: TN=648, FP=0, FN=534, TP=1
+2026-01-01 21:42:43,868 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:42:43,868 - INFO - 
+--- Evaluating probe for layer 5 ---
+2026-01-01 21:42:43,868 - INFO - Executing eval.py...
+2026-01-01 21:42:43,868 - INFO - Computing evaluation metrics...
+2026-01-01 21:47:38,868 - INFO - ✓ Evaluation completed successfully for layer 5
+2026-01-01 21:47:38,868 - INFO -   Test Accuracy: 0.5486 (54.86%)
+2026-01-01 21:47:38,868 - INFO -   Precision: 0.6667
+2026-01-01 21:47:38,869 - INFO -   Recall: 0.0037
+2026-01-01 21:47:38,869 - INFO -   F1 Score: 0.0074
+2026-01-01 21:47:38,869 - INFO -   Confusion Matrix: TN=647, FP=1, FN=533, TP=2
+2026-01-01 21:47:38,869 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:47:38,869 - INFO - 
+--- Evaluating probe for layer 6 ---
+2026-01-01 21:47:38,869 - INFO - Executing eval.py...
+2026-01-01 21:47:38,869 - INFO - Computing evaluation metrics...
+2026-01-01 21:52:31,139 - INFO - ✓ Evaluation completed successfully for layer 6
+2026-01-01 21:52:31,140 - INFO -   Test Accuracy: 0.7025 (70.25%)
+2026-01-01 21:52:31,140 - INFO -   Precision: 0.7113
+2026-01-01 21:52:31,140 - INFO -   Recall: 0.5757
+2026-01-01 21:52:31,140 - INFO -   F1 Score: 0.6364
+2026-01-01 21:52:31,140 - INFO -   Confusion Matrix: TN=523, FP=125, FN=227, TP=308
+2026-01-01 21:52:31,140 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:52:31,140 - INFO - 
+--- Evaluating probe for layer 7 ---
+2026-01-01 21:52:31,140 - INFO - Executing eval.py...
+2026-01-01 21:52:31,140 - INFO - Computing evaluation metrics...
+2026-01-01 21:57:26,648 - INFO - ✓ Evaluation completed successfully for layer 7
+2026-01-01 21:57:26,649 - INFO -   Test Accuracy: 0.7405 (74.05%)
+2026-01-01 21:57:26,649 - INFO -   Precision: 0.7908
+2026-01-01 21:57:26,649 - INFO -   Recall: 0.5794
+2026-01-01 21:57:26,649 - INFO -   F1 Score: 0.6688
+2026-01-01 21:57:26,649 - INFO -   Confusion Matrix: TN=566, FP=82, FN=225, TP=310
+2026-01-01 21:57:26,649 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 21:57:26,650 - INFO - 
+--- Evaluating probe for layer 8 ---
+2026-01-01 21:57:26,650 - INFO - Executing eval.py...
+2026-01-01 21:57:26,650 - INFO - Computing evaluation metrics...
+2026-01-01 22:02:20,687 - INFO - ✓ Evaluation completed successfully for layer 8
+2026-01-01 22:02:20,688 - INFO -   Test Accuracy: 0.7337 (73.37%)
+2026-01-01 22:02:20,688 - INFO -   Precision: 0.7835
+2026-01-01 22:02:20,688 - INFO -   Recall: 0.5682
+2026-01-01 22:02:20,688 - INFO -   F1 Score: 0.6587
+2026-01-01 22:02:20,688 - INFO -   Confusion Matrix: TN=564, FP=84, FN=231, TP=304
+2026-01-01 22:02:20,688 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 22:02:20,688 - INFO - 
+--- Evaluating probe for layer 9 ---
+2026-01-01 22:02:20,688 - INFO - Executing eval.py...
+2026-01-01 22:02:20,688 - INFO - Computing evaluation metrics...
+2026-01-01 22:07:17,078 - INFO - ✓ Evaluation completed successfully for layer 9
+2026-01-01 22:07:17,079 - INFO -   Test Accuracy: 0.5478 (54.78%)
+2026-01-01 22:07:17,079 - INFO -   Precision: 0.0000
+2026-01-01 22:07:17,080 - INFO -   Recall: 0.0000
+2026-01-01 22:07:17,080 - INFO -   F1 Score: 0.0000
+2026-01-01 22:07:17,080 - INFO -   Confusion Matrix: TN=648, FP=0, FN=535, TP=0
+2026-01-01 22:07:17,080 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 22:07:17,080 - INFO - 
+--- Evaluating probe for layer 10 ---
+2026-01-01 22:07:17,080 - INFO - Executing eval.py...
+2026-01-01 22:07:17,080 - INFO - Computing evaluation metrics...
+2026-01-01 22:12:10,144 - INFO - ✓ Evaluation completed successfully for layer 10
+2026-01-01 22:12:10,145 - INFO -   Test Accuracy: 0.5478 (54.78%)
+2026-01-01 22:12:10,145 - INFO -   Precision: 0.0000
+2026-01-01 22:12:10,145 - INFO -   Recall: 0.0000
+2026-01-01 22:12:10,145 - INFO -   F1 Score: 0.0000
+2026-01-01 22:12:10,145 - INFO -   Confusion Matrix: TN=648, FP=0, FN=535, TP=0
+2026-01-01 22:12:10,145 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 22:12:10,145 - INFO - 
+--- Evaluating probe for layer 11 ---
+2026-01-01 22:12:10,145 - INFO - Executing eval.py...
+2026-01-01 22:12:10,146 - INFO - Computing evaluation metrics...
+2026-01-01 22:17:05,110 - INFO - ✓ Evaluation completed successfully for layer 11
+2026-01-01 22:17:05,111 - INFO -   Test Accuracy: 0.6619 (66.19%)
+2026-01-01 22:17:05,111 - INFO -   Precision: 0.6433
+2026-01-01 22:17:05,111 - INFO -   Recall: 0.5664
+2026-01-01 22:17:05,111 - INFO -   F1 Score: 0.6024
+2026-01-01 22:17:05,111 - INFO -   Confusion Matrix: TN=480, FP=168, FN=232, TP=303
+2026-01-01 22:17:05,111 - INFO -   Above chance (>50%): ✓ YES
+2026-01-01 22:17:05,111 - INFO - 
+============================================================
+2026-01-01 22:17:05,111 - INFO - 
+Step 5: Computing graph statistics...
+2026-01-01 22:17:05,111 - INFO -   Layers to analyze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+2026-01-01 22:17:05,111 - INFO -   Network density: 0.05
+2026-01-01 22:17:05,111 - INFO - Executing graph_analysis.py for layer 0...

@@ -35,17 +35,17 @@ class TruthfulQADataset(Dataset):
         else:
             self.dense_filename = f"layer_{self.llm_layer}_corr.npy"
         self.network_density = network_density
+        # Convert density to tag format matching compute_llm_network.py (0.05 -> "05")
+        self.density_tag = f"{int(round(network_density * 100)):02d}"
         self.network_indices = indices
         self.from_sparse_data = from_sparse_data
         self.in_memory = in_memory
         self.dataset_name = dataset_name
 
-        # Sanitize model name for filesystem paths
-        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = sanitized_model_name
+            model_dir = self.llm_model_name
         else:
-            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
+            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         if self.in_memory:
@@ -64,7 +64,6 @@ class TruthfulQADataset(Dataset):
             adj = np.load(data_path / self.dense_filename)
             # Replace NaN/Inf values to stabilize downstream graph ops
             adj = np.nan_to_num(adj, nan=0.0, posinf=0.0, neginf=0.0)
-            adj = np.abs(adj)
             percentile_threshold = self.network_density * 100
             threshold = np.percentile(np.abs(adj), 100 - percentile_threshold)
             adj[np.abs(adj) < threshold] = 0
@@ -73,12 +72,10 @@ class TruthfulQADataset(Dataset):
             edge_index, edge_attr = dense_to_sparse(adj)
             num_nodes = adj.shape[0]
         else:
-            density_tag = f"{int(round(self.network_density * 100)):02d}"
-            edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_index.npy")).long()
-            edge_attr_np = np.load(data_path / f"layer_{self.llm_layer}_sparse_{density_tag}_edge_attr.npy").astype(np.float32)
-            # Sanitize NaN/Inf in saved sparse weights and take absolute value
+            edge_index = torch.from_numpy(np.load(data_path / f"layer_{self.llm_layer}_sparse_{self.density_tag}_edge_index.npy")).long()
+            edge_attr_np = np.load(data_path / f"layer_{self.llm_layer}_sparse_{self.density_tag}_edge_attr.npy").astype(np.float32)
+            # Sanitize NaN/Inf in saved sparse weights while preserving sign
             edge_attr_np = np.nan_to_num(edge_attr_np, nan=0.0, posinf=0.0, neginf=0.0)
-            edge_attr_np = np.abs(edge_attr_np)
             edge_attr = torch.from_numpy(edge_attr_np).float()
             num_nodes = edge_index.max().item() + 1
 
@@ -124,11 +121,10 @@ class TruthfulQALinearDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
-        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = sanitized_model_name
+            model_dir = self.llm_model_name
         else:
-            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
+            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
@@ -202,12 +198,10 @@ class TruthfulQACCSDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
-        # Sanitize model name for filesystem paths
-        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = sanitized_model_name
+            model_dir = self.llm_model_name
         else:
-            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
+            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
