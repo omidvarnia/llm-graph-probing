@@ -1,4 +1,4 @@
-from absl import app, flags
+from absl import app, flags, logging
 import os
 from typing import List, Dict
 import urllib.error
@@ -113,14 +113,20 @@ def _build_helm() -> List[Dict]:
 
 
 def main(_):
-    print("\n")
-    print("\n")
-    print("\n\n" + "="*10)
-    print("STEP 1: DATASET CONSTRUCTION & ACTIVATION EXTRACTION")
-    print("="*10)
-    print(f"Device: CPU (Data processing)")
-    print(f"Dataset: {FLAGS.dataset_name}")
-    print("="*10 + "\n")
+    # Configure absl logging format with datetime stamps
+    logging.use_absl_handler()
+    import logging as stdlib_logging
+    absl_handler = logging.get_absl_handler()
+    absl_handler.setFormatter(stdlib_logging.Formatter('%(asctime)s %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    
+    logging.info("\n")
+    logging.info("\n")
+    logging.info("\n\n" + "="*10)
+    logging.info("STEP 1: DATASET CONSTRUCTION & ACTIVATION EXTRACTION")
+    logging.info("="*10)
+    logging.info(f"Device: CPU (Data processing)")
+    logging.info(f"Dataset: {FLAGS.dataset_name}")
+    logging.info("="*10 + "\n")
     
     if FLAGS.dataset_name == "truthfulqa":
         records = _build_truthfulqa()
@@ -138,22 +144,22 @@ def main(_):
     df = df.drop_duplicates().reset_index(drop=True)
     deduplicated_size = len(df)
     
-    print(f"{'─'*10}")
-    print(f"Dataset Statistics:")
-    print(f"  Original size: {original_size}")
-    print(f"  After deduplication: {deduplicated_size}")
-    print(f"  Samples removed: {original_size - deduplicated_size}")
-    print(f"{'─'*10}\n")
+    logging.info(f"{'─'*10}")
+    logging.info(f"Dataset Statistics:")
+    logging.info(f"  Original size: {original_size}")
+    logging.info(f"  After deduplication: {deduplicated_size}")
+    logging.info(f"  Samples removed: {original_size - deduplicated_size}")
+    logging.info(f"{'─'*10}\n")
     
     output_path = os.path.join(FLAGS.output_dir, f"{FLAGS.dataset_name}.csv")
     os.makedirs(FLAGS.output_dir, exist_ok=True)
     df.to_csv(output_path, index=False)
     
-    print("\n" + "="*10)
-    print("STEP 1 COMPLETE: Dataset Construction")
-    print("="*10)
-    print(f"✓ Saved dataset to {output_path}")
-    print("="*10 + "\n\n")
+    logging.info("\n" + "="*10)
+    logging.info("STEP 1 COMPLETE: Dataset Construction")
+    logging.info("="*10)
+    logging.info(f"✓ Saved dataset to {output_path}")
+    logging.info("="*10 + "\n\n")
 
 
 if __name__ == "__main__":

@@ -129,11 +129,11 @@ def main(_):
     warnings.filterwarnings('ignore', category=UserWarning)
     warnings.filterwarnings('ignore', category=FutureWarning)
     
-    # Configure absl logging format
+    # Configure absl logging format with datetime stamps
     logging.use_absl_handler()
     import logging as stdlib_logging
     absl_handler = logging.get_absl_handler()
-    absl_handler.setFormatter(stdlib_logging.Formatter('%(filename)s:%(lineno)d - %(message)s'))
+    absl_handler.setFormatter(stdlib_logging.Formatter('%(asctime)s %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
     
     from hallucination.utils import select_device
     device = select_device(FLAGS.gpu_id)

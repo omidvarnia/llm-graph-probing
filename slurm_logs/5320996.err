@@ -1,0 +1,247 @@
+/u/aomidvarnia/.bashrc: line 32: bind: warning: line editing not enabled
+/u/aomidvarnia/.bashrc: line 33: bind: warning: line editing not enabled
+amdgpu.ids: No such file or directory
+14:51:18 hallucination_detection_analysis.py:367 - ==========
+14:51:18 hallucination_detection_analysis.py:368 - HALLUCINATION DETECTION PIPELINE - DEVICE CONFIGURATION
+14:51:18 hallucination_detection_analysis.py:369 - ==========
+amdgpu.ids: No such file or directory
+14:51:20 hallucination_detection_analysis.py:400 - ✓ Device Type: ROCm/HIP
+14:51:20 hallucination_detection_analysis.py:401 -   AMD GPU: AMD Radeon Graphics
+14:51:20 hallucination_detection_analysis.py:402 -   ROCm Version: 6.1.40091-a8dbc0c19
+14:51:20 hallucination_detection_analysis.py:410 -   Selected GPU ID: 0
+14:51:20 hallucination_detection_analysis.py:411 -   Total Available GPUs: 1
+14:51:20 hallucination_detection_analysis.py:428 - 
+GPU Environment Variables:
+14:51:20 hallucination_detection_analysis.py:429 -   HIP_VISIBLE_DEVICES: 0
+14:51:20 hallucination_detection_analysis.py:430 -   ROCR_VISIBLE_DEVICES: 0
+14:51:20 hallucination_detection_analysis.py:431 -   CUDA_VISIBLE_DEVICES: 0
+14:51:20 hallucination_detection_analysis.py:432 - ==========
+
+14:51:20 hallucination_detection_analysis.py:434 - Starting Graph Probing Analysis
+14:51:27 hallucination_detection_analysis.py:449 - Auto-detected 12 layers in model gpt2
+14:51:27 hallucination_detection_analysis.py:450 - Processing all layers: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+14:51:27 hallucination_detection_analysis.py:470 - ==========
+14:51:27 hallucination_detection_analysis.py:471 - REPRODUCIBILITY: Random Seed Configuration
+14:51:27 hallucination_detection_analysis.py:472 - ==========
+14:51:27 hallucination_detection_analysis.py:476 - Random Seed: 16070972 (AUTO-GENERATED)
+14:51:27 hallucination_detection_analysis.py:477 -   This seed will be used for ALL layers to ensure identical train/test splits
+14:51:27 hallucination_detection_analysis.py:478 -   Train/Test Split: 80/20 (4732/1183 samples)
+14:51:27 hallucination_detection_analysis.py:498 - ✓ Seed saved to: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp/random_seed.txt
+14:51:27 hallucination_detection_analysis.py:499 -   You can use this seed in future runs to reproduce the exact same train/test split
+14:51:27 hallucination_detection_analysis.py:500 - ==========
+
+14:51:27 hallucination_detection_analysis.py:505 - ==========
+14:51:27 hallucination_detection_analysis.py:506 - SELECTIVE CLEANUP: Preserving Step 1 & 2 outputs
+14:51:27 hallucination_detection_analysis.py:507 - ==========
+14:51:27 hallucination_detection_analysis.py:524 - Removing Step 3+ outputs (training, evaluation, analysis)...
+14:51:27 hallucination_detection_analysis.py:530 - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp
+14:51:27 hallucination_detection_analysis.py:530 - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2
+14:51:27 hallucination_detection_analysis.py:530 - ✓ Removed: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2
+14:51:27 hallucination_detection_analysis.py:539 - ✓ Preserving Step 1 & 2 outputs: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
+14:51:27 hallucination_detection_analysis.py:543 - ==========
+
+14:51:27 hallucination_detection_analysis.py:669 - Dataset: truthfulqa
+14:51:27 hallucination_detection_analysis.py:670 - Model: gpt2 (sanitized: gpt2)
+14:51:27 hallucination_detection_analysis.py:671 - Checkpoint step: -1
+14:51:27 hallucination_detection_analysis.py:672 - Batch size: 16
+14:51:27 hallucination_detection_analysis.py:687 - ✓ REUSING existing dataset: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa.csv
+14:51:27 hallucination_detection_analysis.py:688 -   - Total rows: 5915
+14:51:27 hallucination_detection_analysis.py:689 -   - Columns: ['question_id', 'question', 'answer', 'label']
+14:51:27 hallucination_detection_analysis.py:724 - ✓ Skipped: Using existing dataset
+14:51:27 hallucination_detection_analysis.py:735 - ✓ SANITY CHECK: Dataset file exists at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa.csv
+14:51:27 hallucination_detection_analysis.py:738 - ✓ SANITY CHECK: Dataset loaded successfully
+14:51:27 hallucination_detection_analysis.py:739 -   - Total rows: 5915
+14:51:27 hallucination_detection_analysis.py:740 -   - Columns: ['question_id', 'question', 'answer', 'label']
+14:51:27 hallucination_detection_analysis.py:749 - ✓ SANITY CHECK: All required columns present: ['label', 'answer']
+14:51:27 hallucination_detection_analysis.py:754 - ✓ SANITY CHECK: Label distribution: {0: 3317, 1: 2598}
+14:51:27 hallucination_detection_analysis.py:761 - ✓ SANITY CHECK: Both classes present
+14:51:27 hallucination_detection_analysis.py:772 - ✓ Saved label distribution plot to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp/layer_0/dataset_label_distribution.png
+14:51:27 hallucination_detection_analysis.py:777 - ✓ Saved dataset head (20 rows) to /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp/layer_0/dataset_head.csv
+14:51:27 hallucination_detection_analysis.py:779 - ✓ Dataset is ready for processing
+14:51:27 hallucination_detection_analysis.py:791 - Layer IDs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+14:51:27 hallucination_detection_analysis.py:792 - Network density: 0.05
+14:51:27 hallucination_detection_analysis.py:793 - Sparse mode: True
+14:51:27 hallucination_detection_analysis.py:799 - ✓ SANITY CHECK: network_density=0.05 is valid
+14:51:27 hallucination_detection_analysis.py:804 - ✓ SANITY CHECK: 12 layer(s) to process
+14:51:27 hallucination_detection_analysis.py:846 - ✓ REUSING existing network outputs: /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
+14:51:27 hallucination_detection_analysis.py:847 -   - Layer: 0
+14:51:27 hallucination_detection_analysis.py:848 -   - Density: 0.05 (tag: 05)
+14:51:27 hallucination_detection_analysis.py:849 -   - Sparse mode: True
+14:51:27 hallucination_detection_analysis.py:850 -   - Sample questions checked: 5
+14:51:27 hallucination_detection_analysis.py:894 - ✓ Skipped: Using existing network outputs
+14:51:32 hallucination_detection_analysis.py:921 - ✓ SANITY CHECK: Found 70980 sparse network file(s) in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/data/hallucination/truthfulqa/gpt2
+14:51:32 hallucination_detection_analysis.py:924 -   Example 1: 705/layer_9_sparse_05_edge_index.npy
+14:51:32 hallucination_detection_analysis.py:924 -   Example 2: 705/layer_1_sparse_05_edge_index.npy
+14:51:32 hallucination_detection_analysis.py:924 -   Example 3: 705/layer_4_sparse_05_edge_index.npy
+14:51:32 hallucination_detection_analysis.py:959 - ✓ Saved FC matrix before threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp/layer_0/fc_before_threshold.png
+14:51:32 hallucination_detection_analysis.py:976 - ✓ Saved FC matrix after threshold (question 0): /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/reports/hallucination_analysis/gpt2_mlp/layer_0/fc_after_threshold.png
+14:51:32 hallucination_detection_analysis.py:981 -   Threshold: 0.5649, Edges before: 589824, after: 28724
+14:51:32 hallucination_detection_analysis.py:991 - ==========
+14:51:32 hallucination_detection_analysis.py:992 - STEP 3: Training Graph Neural Network Probes
+14:51:32 hallucination_detection_analysis.py:993 - ==========
+14:51:32 hallucination_detection_analysis.py:994 - Probe input: corr
+14:51:32 hallucination_detection_analysis.py:995 - Density: 0.05
+14:51:32 hallucination_detection_analysis.py:996 - Num channels: 32
+14:51:32 hallucination_detection_analysis.py:997 - Num layers: -2
+14:51:32 hallucination_detection_analysis.py:998 - Learning rate: 0.0001
+14:51:32 hallucination_detection_analysis.py:999 - Batch size: 16
+14:51:32 hallucination_detection_analysis.py:1000 - Eval batch size: 32
+14:51:32 hallucination_detection_analysis.py:1001 - Num epochs: 100
+14:51:32 hallucination_detection_analysis.py:1002 - Early stop patience: 20
+14:51:32 hallucination_detection_analysis.py:1003 - Label smoothing: None (disabled)
+14:51:32 hallucination_detection_analysis.py:1004 - Gradient clipping: None (disabled)
+14:51:32 hallucination_detection_analysis.py:1005 - Random seed: 16070972 (AUTO-GENERATED)
+14:51:32 hallucination_detection_analysis.py:1006 - GPU ID: 0
+14:51:32 hallucination_detection_analysis.py:1012 - ✓ SANITY CHECK: num_epochs=100 is valid
+14:51:32 hallucination_detection_analysis.py:1017 - ✓ SANITY CHECK: learning_rate=0.0001 is valid
+14:51:32 hallucination_detection_analysis.py:1022 - ✓ SANITY CHECK: label_smoothing=disabled is valid
+14:51:32 hallucination_detection_analysis.py:1029 - Starting probe training for layer 0
+14:51:32 hallucination_detection_analysis.py:1033 - Executing train.py...
+14:51:32 hallucination_detection_analysis.py:1034 - This may take a while...
+15:06:05 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 0
+15:06:05 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_0/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+15:06:05 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+15:06:05 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_0
+15:06:05 hallucination_detection_analysis.py:1029 - Starting probe training for layer 1
+15:06:05 hallucination_detection_analysis.py:1033 - Executing train.py...
+15:06:05 hallucination_detection_analysis.py:1034 - This may take a while...
+15:21:58 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 1
+15:21:58 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_1/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+15:21:58 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+15:21:58 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_1
+15:21:58 hallucination_detection_analysis.py:1029 - Starting probe training for layer 2
+15:21:58 hallucination_detection_analysis.py:1033 - Executing train.py...
+15:21:58 hallucination_detection_analysis.py:1034 - This may take a while...
+15:44:25 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 2
+15:44:25 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_2/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+15:44:25 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+15:44:25 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_2
+15:44:25 hallucination_detection_analysis.py:1029 - Starting probe training for layer 3
+15:44:25 hallucination_detection_analysis.py:1033 - Executing train.py...
+15:44:25 hallucination_detection_analysis.py:1034 - This may take a while...
+16:00:18 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 3
+16:00:18 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_3/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+16:00:18 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+16:00:18 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_3
+16:00:19 hallucination_detection_analysis.py:1029 - Starting probe training for layer 4
+16:00:19 hallucination_detection_analysis.py:1033 - Executing train.py...
+16:00:19 hallucination_detection_analysis.py:1034 - This may take a while...
+16:17:25 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 4
+16:17:25 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_4/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+16:17:25 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+16:17:25 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_4
+16:17:26 hallucination_detection_analysis.py:1029 - Starting probe training for layer 5
+16:17:26 hallucination_detection_analysis.py:1033 - Executing train.py...
+16:17:26 hallucination_detection_analysis.py:1034 - This may take a while...
+16:41:27 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 5
+16:41:27 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_5/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+16:41:27 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+16:41:27 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_5
+16:41:27 hallucination_detection_analysis.py:1029 - Starting probe training for layer 6
+16:41:27 hallucination_detection_analysis.py:1033 - Executing train.py...
+16:41:27 hallucination_detection_analysis.py:1034 - This may take a while...
+16:58:16 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 6
+16:58:16 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_6/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+16:58:16 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+16:58:16 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_6
+16:58:16 hallucination_detection_analysis.py:1029 - Starting probe training for layer 7
+16:58:16 hallucination_detection_analysis.py:1033 - Executing train.py...
+16:58:16 hallucination_detection_analysis.py:1034 - This may take a while...
+17:15:16 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 7
+17:15:16 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_7/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+17:15:16 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+17:15:16 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_7
+17:15:16 hallucination_detection_analysis.py:1029 - Starting probe training for layer 8
+17:15:16 hallucination_detection_analysis.py:1033 - Executing train.py...
+17:15:16 hallucination_detection_analysis.py:1034 - This may take a while...
+17:37:07 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 8
+17:37:07 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_8/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+17:37:07 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+17:37:07 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_8
+17:37:07 hallucination_detection_analysis.py:1029 - Starting probe training for layer 9
+17:37:07 hallucination_detection_analysis.py:1033 - Executing train.py...
+17:37:07 hallucination_detection_analysis.py:1034 - This may take a while...
+17:52:27 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 9
+17:52:27 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_9/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+17:52:27 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+17:52:27 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_9
+17:52:27 hallucination_detection_analysis.py:1029 - Starting probe training for layer 10
+17:52:27 hallucination_detection_analysis.py:1033 - Executing train.py...
+17:52:27 hallucination_detection_analysis.py:1034 - This may take a while...
+18:16:36 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 10
+18:16:36 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_10/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+18:16:36 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+18:16:36 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_10
+18:16:36 hallucination_detection_analysis.py:1029 - Starting probe training for layer 11
+18:16:36 hallucination_detection_analysis.py:1033 - Executing train.py...
+18:16:36 hallucination_detection_analysis.py:1034 - This may take a while...
+18:31:56 hallucination_detection_analysis.py:1073 - ✓ Probe trained successfully for layer 11
+18:31:56 hallucination_detection_analysis.py:1087 - ✓ SANITY CHECK: Best model saved at /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/saves/hallucination/truthfulqa/gpt2/layer_11/best_model_density-05_dim-32_hop--2_input-corr.pth (size: 37.71 MB)
+18:31:56 hallucination_detection_analysis.py:1091 - Trained models are ready for evaluation
+18:31:56 hallucination_detection_analysis.py:1100 - ✓ SANITY CHECK: TensorBoard event files found in /viper/ptmp2/aomidvarnia/analysis_results/llm_graph/runs/hallucination/truthfulqa/gpt2/layer_11
+18:31:56 hallucination_detection_analysis.py:1144 - Network density: 0.05
+18:31:56 hallucination_detection_analysis.py:1145 - Layers to evaluate: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+18:31:56 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 0
+18:31:56 hallucination_detection_analysis.py:1154 - Executing eval.py...
+18:31:56 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+18:38:55 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 0
+18:38:55 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 0
+18:38:55 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 1
+18:38:55 hallucination_detection_analysis.py:1154 - Executing eval.py...
+18:38:55 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+18:45:56 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 1
+18:45:56 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 1
+18:45:56 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 2
+18:45:56 hallucination_detection_analysis.py:1154 - Executing eval.py...
+18:45:56 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+18:53:00 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 2
+18:53:00 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 2
+18:53:00 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 3
+18:53:00 hallucination_detection_analysis.py:1154 - Executing eval.py...
+18:53:00 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:00:27 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 3
+19:00:27 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 3
+19:00:27 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 4
+19:00:27 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:00:27 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:07:49 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 4
+19:07:49 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 4
+19:07:49 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 5
+19:07:49 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:07:49 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:14:48 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 5
+19:14:48 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 5
+19:14:48 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 6
+19:14:48 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:14:48 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:21:46 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 6
+19:21:46 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 6
+19:21:46 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 7
+19:21:46 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:21:46 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:28:43 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 7
+19:28:43 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 7
+19:28:43 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 8
+19:28:43 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:28:43 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:36:09 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 8
+19:36:09 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 8
+19:36:09 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 9
+19:36:09 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:36:09 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:43:32 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 9
+19:43:32 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 9
+19:43:32 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 10
+19:43:32 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:43:32 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:50:29 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 10
+19:50:29 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 10
+19:50:29 hallucination_detection_analysis.py:1151 - Starting evaluation for layer 11
+19:50:29 hallucination_detection_analysis.py:1154 - Executing eval.py...
+19:50:29 hallucination_detection_analysis.py:1155 - Computing evaluation metrics...
+19:57:18 hallucination_detection_analysis.py:1187 - ✓ Evaluation completed successfully for layer 11
+19:57:18 hallucination_detection_analysis.py:1229 - Could not extract confusion matrix from eval log for layer 11
+19:57:18 hallucination_detection_analysis.py:1241 - Layers to analyze: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+19:57:18 hallucination_detection_analysis.py:1242 - Network density: 0.05
+19:57:18 hallucination_detection_analysis.py:1248 - Executing graph_analysis.py for layer 0...
+slurmstepd: error: *** JOB 5320996 ON vipa1285 CANCELLED AT 2026-01-03T14:50:50 DUE TO TIME LIMIT ***

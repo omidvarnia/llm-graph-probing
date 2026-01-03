@@ -131,6 +131,7 @@ import os
 import argparse
 import json
 import time
+from datetime import datetime
 import subprocess
 import numpy as np
 import pandas as pd
@@ -363,7 +364,7 @@ if 'CUDA_VISIBLE_DEVICES' in os.environ:
 # Ensure we use the same Python executable
 python_exe = sys.executable
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(filename)s:%(lineno)d - %(message)s', datefmt='%H:%M:%S')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(filename)s:%(lineno)d - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logging.info("="*10)
 logging.info("HALLUCINATION DETECTION PIPELINE - DEVICE CONFIGURATION")
 logging.info("="*10)
@@ -506,41 +507,53 @@ logging.info("="*10)
 logging.info("SELECTIVE CLEANUP: Preserving Step 1 & 2 outputs")
 logging.info("="*10)
 
-# Define all output directories that will be cleaned
-sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
-if ckpt_step == -1:
-    model_dir_name = sanitized_model_name
+# Controlled via config: common.enable_cleanup (default False)
+# When True: remove Step 3+ outputs (reports/saves/runs) for a fresh run
+# When False: keep all previous results intact
+enable_cleanup_cfg = common_cfg.get('enable_cleanup', False)
+if isinstance(enable_cleanup_cfg, str):
+    enable_cleanup = enable_cleanup_cfg.strip().lower() in ("true", "1", "yes", "y")
 else:
-    model_dir_name = f"{sanitized_model_name}_step{ckpt_step}"
+    enable_cleanup = bool(enable_cleanup_cfg)
 
-# Only remove Step 3+ outputs (training, evaluation, analysis)
-# Preserve Step 1 (dataset) and Step 2 (network) for reuse
-cleanup_dirs = [
-    main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe,
-    main_dir / "saves" / "hallucination" / dataset_name / model_dir_name,
-    main_dir / "runs" / "hallucination" / dataset_name / model_dir_name,
-]
-
-logging.info("Removing Step 3+ outputs (training, evaluation, analysis)...")
-for cleanup_dir in cleanup_dirs:
-    if cleanup_dir.exists():
-        try:
-            import shutil
-            shutil.rmtree(cleanup_dir)
-            logging.info(f"✓ Removed: {cleanup_dir}")
-        except Exception as e:
-            logging.warning(f"⚠ Failed to remove {cleanup_dir}: {e}")
+if not enable_cleanup:
+    logging.info("Skipping cleanup of Step 3+ outputs (preserving existing results)")
+else:
+    # Define all output directories that will be cleaned
+    sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    if ckpt_step == -1:
+        model_dir_name = sanitized_model_name
     else:
-        logging.info(f"  (not found, skipping): {cleanup_dir}")
+        model_dir_name = f"{sanitized_model_name}_step{ckpt_step}"
 
-# Preserve Step 1 & 2 outputs
-preserved_dir = main_dir / "data" / "hallucination" / dataset_name / model_dir_name
-if preserved_dir.exists():
-    logging.info(f"✓ Preserving Step 1 & 2 outputs: {preserved_dir}")
-else:
-    logging.info(f"  No existing Step 1 & 2 outputs found at: {preserved_dir}")
+    # Only remove Step 3+ outputs (training, evaluation, analysis)
+    # Preserve Step 1 (dataset) and Step 2 (network) for reuse
+    cleanup_dirs = [
+        main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe,
+        main_dir / "saves" / "hallucination" / dataset_name / model_dir_name,
+        main_dir / "runs" / "hallucination" / dataset_name / model_dir_name,
+    ]
 
-logging.info("="*10 + "\n")
+    logging.info("Removing Step 3+ outputs (training, evaluation, analysis)...")
+    for cleanup_dir in cleanup_dirs:
+        if cleanup_dir.exists():
+            try:
+                import shutil
+                shutil.rmtree(cleanup_dir)
+                logging.info(f"✓ Removed: {cleanup_dir}")
+            except Exception as e:
+                logging.warning(f"⚠ Failed to remove {cleanup_dir}: {e}")
+        else:
+            logging.info(f"  (not found, skipping): {cleanup_dir}")
+
+    # Preserve Step 1 & 2 outputs
+    preserved_dir = main_dir / "data" / "hallucination" / dataset_name / model_dir_name
+    if preserved_dir.exists():
+        logging.info(f"✓ Preserving Step 1 & 2 outputs: {preserved_dir}")
+    else:
+        logging.info(f"  No existing Step 1 & 2 outputs found at: {preserved_dir}")
+
+    logging.info("="*10 + "\n")
 
 # Create fresh output directories
 reports_root = main_dir / "reports" / "hallucination_analysis" / model_tag_with_probe
@@ -601,6 +614,73 @@ def _plot_series(series: list[tuple[float, float]], title: str, ylabel: str, out
     plt.close()
 
 step_results = []
+
+# =====================================
+# STEP SELECTION AND VALIDATION
+# =====================================
+steps_config = common_cfg.get('steps', '1,2,3,4,5')
+try:
+    requested_steps = sorted(set(int(s.strip()) for s in str(steps_config).split(',') if s.strip()))
+    if not requested_steps:
+        raise ValueError("At least one step must be specified")
+    if not all(1 <= s <= 5 for s in requested_steps):
+        raise ValueError("Steps must be between 1 and 5")
+except (ValueError, TypeError) as e:
+    logging.error(f"✗ INVALID STEPS CONFIGURATION: {e}")
+    logging.error(f"  Please specify steps as comma-separated integers (e.g., '1', '1,2,3', '3,4,5')")
+    sys.exit(1)
+
+logging.info(f"Requested steps: {requested_steps}")
+
+# Validate that if not starting from step 1, previous step results exist
+if requested_steps[0] > 1:
+    logging.info("Pipeline not starting from Step 1 - checking for previous step results...")
+    min_step = requested_steps[0]
+    
+    # Check Step 1 outputs (dataset)
+    if min_step > 1:
+        dataset_path = main_dir / "data/hallucination" / f"{dataset_name}.csv"
+        if not dataset_path.exists():
+            logging.error(f"✗ VALIDATION FAILED: Step 1 outputs not found")
+            logging.error(f"  Expected dataset file: {dataset_path}")
+            logging.error(f"  Cannot start from step {min_step} without Step 1 results")
+            sys.exit(1)
+        logging.info(f"✓ Step 1 outputs found: {dataset_path}")
+    
+    # Check Step 2 outputs (network)
+    if min_step > 2:
+        sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+        if ckpt_step == -1:
+            model_dir_name = sanitized_model_name
+        else:
+            model_dir_name = f"{sanitized_model_name}_step{ckpt_step}"
+        network_base_dir = main_dir / "data" / "hallucination" / dataset_name / model_dir_name
+        if not network_base_dir.exists():
+            logging.error(f"✗ VALIDATION FAILED: Step 2 outputs not found")
+            logging.error(f"  Expected network directory: {network_base_dir}")
+            logging.error(f"  Cannot start from step {min_step} without Step 2 results")
+            sys.exit(1)
+        logging.info(f"✓ Step 2 outputs found: {network_base_dir}")
+    
+    # Check Step 3 outputs (training)
+    if min_step > 3:
+        model_tag = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+        probe_type = "gcn" if num_layers > 0 else "mlp"
+        model_tag_with_probe = f"{model_tag}_{probe_type}"
+        sanitized_model_name = model_name.replace('/', '_').replace('-', '_').replace('.', '_')
+        if ckpt_step == -1:
+            model_dir_name = sanitized_model_name
+        else:
+            model_dir_name = f"{sanitized_model_name}_step{ckpt_step}"
+        saves_dir = main_dir / "saves" / "hallucination" / dataset_name / model_dir_name
+        if not saves_dir.exists() or len(list(saves_dir.glob("layer_*/best_model*"))) == 0:
+            logging.error(f"✗ VALIDATION FAILED: Step 3 outputs not found")
+            logging.error(f"  Expected trained models in: {saves_dir}")
+            logging.error(f"  Cannot start from step {min_step} without Step 3 results")
+            sys.exit(1)
+        logging.info(f"✓ Step 3 outputs found: {saves_dir}")
+    
+    logging.info("✓ All required previous step outputs validated successfully\n")
 
 # ========================================================================
 # FILE AND FOLDER NAMING CONVENTION DOCUMENTATION
@@ -663,13 +743,14 @@ step_results = []
 # ========================================================================
 # Step 1: Prepare the dataset (with reuse check)
 # ========================================================================
-print("\n" + "="*10)
-print("Step 1 - Dataset Construction (Extracting LLM Activations)")
-print("="*10 + "\n")
-logging.info(f"Dataset: {dataset_name}")
-logging.info(f"Model: {model_name} (sanitized: {model_tag})")
-logging.info(f"Checkpoint step: {ckpt_step}")
-logging.info(f"Batch size: {batch_size}")
+if 1 in requested_steps:
+    print("\n" + "="*10)
+    print("Step 1 - Dataset Construction (Extracting LLM Activations)")
+    print("="*10 + "\n")
+    logging.info(f"Dataset: {dataset_name}")
+    logging.info(f"Model: {model_name} (sanitized: {model_tag})")
+    logging.info(f"Checkpoint step: {ckpt_step}")
+    logging.info(f"Batch size: {batch_size}")
 
 step1_log = reports_dir / "step1_construct_dataset.log"
 step_start = time.monotonic()
