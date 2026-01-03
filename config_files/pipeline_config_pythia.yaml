@@ -45,7 +45,7 @@ common:
   ckpt_step: -1                         # Checkpoint step (-1 uses main checkpoint)
   layer_list: all                       # Layers to process: 'all' for automatic detection, or comma-separated list like '5,6,7,8,9,10,11'
   density: 0.05                         # Network density threshold (0.0-1.0) for FC sparsification
-  steps: "1,2,3,4,5"                   # Pipeline steps to execute: comma-separated list (e.g., "1", "1,2", "1,3,4", "3,5"). If not starting from 1, previous step results must exist or error will be raised
+  steps: "1,2,3,4"                   # Pipeline steps to execute: comma-separated list (e.g., "1", "1,2", "1,3,4", "3,5"). If not starting from 1, previous step results must exist or error will be raised
   enable_cleanup: false                 # When true, delete Step 3+ outputs (reports/saves/runs) before starting; when false, preserve all existing results
   # ===== Probe Architecture (Reference uses GCN with 3 layers) =====
   # Option 1: GCN with 3 layers (RECOMMENDED - matches reference)

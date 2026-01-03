@@ -45,10 +45,11 @@ class TruthfulQADataset(Dataset):
         self.in_memory = in_memory
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         if self.in_memory:
@@ -121,10 +122,11 @@ class TruthfulQALinearDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data/hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
@@ -196,10 +198,11 @@ class TruthfulQACCSDataset(TorchDataset):
         self.feature_density = feature_density
         self.dataset_name = dataset_name
 
+        sanitized_model_name = self.llm_model_name.replace('/', '_').replace('-', '_').replace('.', '_')
         if self.ckpt_step == -1:
-            model_dir = self.llm_model_name
+            model_dir = sanitized_model_name
         else:
-            model_dir = f"{self.llm_model_name}_step{self.ckpt_step}"
+            model_dir = f"{sanitized_model_name}_step{self.ckpt_step}"
         self.data_dir = main_dir / "data" / "hallucination" / self.dataset_name / model_dir
 
         self.loaded_data = []
